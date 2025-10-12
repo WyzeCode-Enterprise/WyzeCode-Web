@@ -74,7 +74,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={step === "password" || loading}
                 className={cn(
-                  "bg-[#0a0a0a] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 duration-300 rounded-t-md font-sans",
+                  "bg-[#050505] border border-[#2a2a2a] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 duration-300 rounded-t-md font-sans",
                   step === "password" ? "rounded-b-none" : "",
                   loading ? "opacity-100" : "",
                 )}
@@ -102,7 +102,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                   placeholder="your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="bg-[#0a0a0a] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 rounded-b-md rounded-t-none font-sans border border-[#2a2a2a]"
+                  className="bg-[#050505] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 rounded-b-md rounded-t-none font-sans"
                   style={{ fontFamily: "inherit" }}
                 />
                 <button
