@@ -45,9 +45,9 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         <FieldGroup>
           <div className="flex flex-col items-center gap-4 text-center">
             <a href="/login" className="flex flex-col items-center gap-3 font-medium text-foreground">
-              <img className="h-14 w-14" src="Clyze_Logo/icon_green_black.png" alt=""/>
+              <img className="h-14 w-14" src="lg_files_wb/svg_files/icon_green_black.svg" alt=""/>
             </a>
-            <h1 className="text-[27px] font-bold text-foreground">Welcome to Clyze LTDA.</h1>
+            <h1 className="text-[27px] font-bold text-foreground">Welcome to Wyze Bank.</h1>
             <FieldDescription className="text-[15px] text-muted-foreground">
               Having trouble logging in? <a href="#">Support</a>
             </FieldDescription>
@@ -126,13 +126,13 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
             </Button>
           </Field>
 
-          <FieldSeparator className="text-muted-foreground text-base">or</FieldSeparator>
+          {/* <FieldSeparator className="text-muted-foreground text-base">or</FieldSeparator>
 
           <Field className="grid gap-4 sm:grid-cols-2">
             <Button
               variant="outline"
               type="button"
-              className="border-border text-foreground hover:bg-muted/10 h-13 text-[14px] bg-transparent cursor-pointer"
+              className="border-border text-foreground hover:bg-[#080808]/10 h-13 text-[14px] bg-transparent cursor-pointer"
             >
               <svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="100" height="100" viewBox="0 0 48 48">
                 <path
@@ -157,7 +157,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
             <Button
               variant="outline"
               type="button"
-              className="border-border text-foreground hover:bg-muted/10  h-13 text-[14px] bg-transparent cursor-pointer"
+              className="border-border text-foreground hover:bg-[#080808]/10  h-13 text-[14px] bg-transparent cursor-pointer"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -173,7 +173,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
               Continue with Microsoft
             </Button>
 
-          </Field>
+          </Field> */}
         </FieldGroup>
       </form>
 
