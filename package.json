@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"next dev\" \"node server.js\"",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
-  },
+  "dev": "concurrently \"next dev\" \"node server.js\"",
+  "build": "next build",
+  "start": "next start",
+  "lint": "next lint",
+  "commit": "git add . && git commit -m \"update\" && git push origin main --force"
+},
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/modifiers": "^9.0.0",
