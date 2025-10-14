@@ -12,6 +12,7 @@ import {
   PieChart,
   Settings2,
   SquareTerminal,
+  ShoppingCart,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -40,14 +41,9 @@ const data = {
       plan: "Enterprise",
     },
     {
-      name: "E-commerce",
-      logo: AudioWaveform,
+      name: "My Shop",
+      logo: ShoppingCart,
       plan: "Startup",
-    },
-    {
-      name: "Evil Corp.",
-      logo: Command,
-      plan: "Free",
     },
   ],
   navMain: [
