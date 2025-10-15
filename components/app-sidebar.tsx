@@ -2,10 +2,8 @@
 
 import * as React from "react"
 import {
-  AudioWaveform,
   BookOpen,
   Bot,
-  Command,
   Frame,
   GalleryVerticalEnd,
   Map,
@@ -13,6 +11,10 @@ import {
   Settings2,
   SquareTerminal,
   ShoppingCart,
+  Sparkles,
+  CreditCard,
+  Bell,
+  BadgeCheck,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -27,7 +29,6 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar"
 
-// This is sample data.
 const data = {
   user: {
     name: "Your name",
@@ -38,133 +39,136 @@ const data = {
     {
       name: "Wyze Bank.",
       logo: GalleryVerticalEnd,
-      plan: "Enterprise",
-    },
-    {
-      name: "My Shop",
-      logo: ShoppingCart,
-      plan: "Startup",
-    },
+      plan: "Principal",
+      url: "https://wyzebank.com", // link do time
+    }
   ],
   navMain: [
-    {
-      title: "Playground",
-      url: "#",
-      icon: SquareTerminal,
-      isActive: true,
-      items: [
-        {
-          title: "History",
-          url: "#",
-        },
-        {
-          title: "Starred",
-          url: "#",
-        },
-        {
-          title: "Settings",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Models",
-      url: "#",
-      icon: Bot,
-      items: [
-        {
-          title: "Genesis",
-          url: "#",
-        },
-        {
-          title: "Explorer",
-          url: "#",
-        },
-        {
-          title: "Quantum",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Documentation",
-      url: "#",
-      icon: BookOpen,
-      items: [
-        {
-          title: "Introduction",
-          url: "#",
-        },
-        {
-          title: "Get Started",
-          url: "#",
-        },
-        {
-          title: "Tutorials",
-          url: "#",
-        },
-        {
-          title: "Changelog",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Settings",
-      url: "#",
-      icon: Settings2,
-      items: [
-        {
-          title: "General",
-          url: "#",
-        },
-        {
-          title: "Team",
-          url: "#",
-        },
-        {
-          title: "Billing",
-          url: "#",
-        },
-        {
-          title: "Limits",
-          url: "#",
-        },
-      ],
-    },
+{
+    title: "Dashboard",
+    url: "#",
+    icon: PieChart,
+    items: [
+      { title: "Visão Geral", url: "#" },
+      { title: "Atividades Recentes", url: "#" },
+      { title: "Notificações", url: "#" },
+    ],
+  },
+  {
+    title: "Contas e Carteiras",
+    url: "#",
+    icon: CreditCard,
+    items: [
+      { title: "Minha Conta", url: "#" },
+      { title: "Adicionar Contaa", url: "#" },
+      { title: "Cartões", url: "#" },
+      { title: "Histórico de Movimentos", url: "#" },
+    ],
+  },
+  {
+    title: "Pagamentos e Recebimentos",
+    url: "#",
+    icon: ShoppingCart,
+    items: [
+      { title: "Enviar Dinheiro", url: "#" },
+      { title: "Receber Pagamentos", url: "#" },
+      { title: "Cobranças", url: "#" },
+      { title: "Pagamentos Agendados", url: "#" },
+    ],
+  },
+  {
+    title: "Integrações / Gateway",
+    url: "#",
+    icon: Bot,
+    items: [
+      { title: "Chaves API", url: "#" },
+      { title: "Webhooks", url: "#" },
+      { title: "Pagamentos Online", url: "#" },
+      { title: "Relatórios de Pagamento", url: "#" },
+    ],
+  },
+  {
+    title: "Relatórios e Analytics",
+    url: "#",
+    icon: Map,
+    items: [
+      { title: "Transações", url: "#" },
+      { title: "Relatórios Financeiros", url: "#" },
+      { title: "Gráficos e KPIs", url: "#" },
+    ],
+  },
+  {
+    title: "Segurança e Configurações",
+    url: "#",
+    icon: Settings2,
+    items: [
+      { title: "Configurações de Conta", url: "#" },
+      { title: "Autenticação", url: "#" },
+      { title: "Permissões", url: "#" },
+      { title: "Limites de Pagamento", url: "#" },
+    ],
+  },
+  {
+    title: "Suporte e Documentação",
+    url: "#",
+    icon: BookOpen,
+    items: [
+      { title: "Ajuda", url: "#" },
+      { title: "API Docs", url: "#" },
+      { title: "Status do Sistema", url: "#" },
+    ],
+  }
   ],
   projects: [
-    {
-      name: "Design Engineering",
-      url: "#",
-      icon: Frame,
-    },
-    {
-      name: "Sales & Marketing",
-      url: "#",
-      icon: PieChart,
-    },
-    {
-      name: "Travel",
-      url: "#",
-      icon: Map,
-    },
+  { name: "Minhas Faturas", url: "#", icon: CreditCard },
+  { name: "Pagamentos Agendados", url: "#", icon: ShoppingCart },
+  { name: "Alertas de Conta", url: "#", icon: Bell },
+  { name: "Relatórios Avançados", url: "#", icon: Sparkles },
+  { name: "Transações Recentes", url: "#", icon: Map },
+  { name: "Carteiras Conectadas", url: "#", icon: BadgeCheck },
+  { name: "Configurações Rápidas", url: "#", icon: Frame },
   ],
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const [activeItem, setActiveItem] = React.useState("Dashboard")
+
+  // Atualiza o item ativo
+  const handleSetActive = (title: string) => {
+    setActiveItem(title)
+  }
+
+  // Propaga o estado ativo para NavMain
+  const navWithActive = data.navMain.map((item) => ({
+    ...item,
+    isActive: item.title === activeItem,
+    onClick: () => handleSetActive(item.title),
+    // adiciona classe para background ativo
+    className: item.title === activeItem 
+      ? "bg-muted/60 text-primary rounded-md" 
+      : "hover:bg-muted/40 rounded-md",
+  }))
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <TeamSwitcher
+          teams={data.teams.map(team => ({
+            ...team,
+            onClick: () => window.open(team.url, "_blank"), // abre link em nova aba
+          }))}
+        />
       </SidebarHeader>
+
       <SidebarContent>
-        <NavMain items={data.navMain} />
+        <NavMain items={navWithActive} />
         <NavProjects projects={data.projects} />
       </SidebarContent>
+
       <SidebarFooter>
         <NavUser user={data.user} />
       </SidebarFooter>
+
       <SidebarRail />
     </Sidebar>
   )

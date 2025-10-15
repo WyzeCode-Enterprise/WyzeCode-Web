@@ -218,11 +218,11 @@ html {
 
 /* Custom scrollbar for better aesthetics */
 ::-webkit-scrollbar {
-  width: 10px;
+  width: 4px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #000;
+  background: #080808;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -243,4 +243,9 @@ html {
   --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
   --sidebar-border: hsl(240 3.7% 15.9%);
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
+}
+
+
+.teste {
+  color: #0f0f0f;
 }

@@ -17,12 +17,12 @@ export function SectionCards() {
         <CardHeader>
           <CardDescription>Total Revenue</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            $1,250.00
+            R$ 00.00
           </CardTitle>
           <CardAction>
             <Badge variant="outline">
               <IconTrendingUp />
-              +12.5%
+              +00.00%
             </Badge>
           </CardAction>
         </CardHeader>
@@ -39,12 +39,12 @@ export function SectionCards() {
         <CardHeader>
           <CardDescription>New Customers</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            1,234
+            00.00
           </CardTitle>
           <CardAction>
             <Badge variant="outline">
               <IconTrendingDown />
-              -20%
+              -00.00%
             </Badge>
           </CardAction>
         </CardHeader>
@@ -61,12 +61,12 @@ export function SectionCards() {
         <CardHeader>
           <CardDescription>Active Accounts</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            45,678
+            00.00
           </CardTitle>
           <CardAction>
             <Badge variant="outline">
               <IconTrendingUp />
-              +12.5%
+              +00.00%
             </Badge>
           </CardAction>
         </CardHeader>
@@ -81,12 +81,12 @@ export function SectionCards() {
         <CardHeader>
           <CardDescription>Growth Rate</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            4.5%
+            00.00%
           </CardTitle>
           <CardAction>
             <Badge variant="outline">
               <IconTrendingUp />
-              +4.5%
+              +00.00%
             </Badge>
           </CardAction>
         </CardHeader>
