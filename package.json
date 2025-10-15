@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "c": "git add . && git commit -m \"update\" && git push origin main --force"
+    "c": "git add . && git commit -m \"update\" && git push origin main --force",
+    "export": "next build && next export"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

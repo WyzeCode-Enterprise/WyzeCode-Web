@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: "export", // ativa exportação estática
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: true, // ignora ESLint no build
   },
 };
 
