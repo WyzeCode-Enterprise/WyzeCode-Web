@@ -138,7 +138,6 @@
   animation: fadeIn 0.4s ease forwards;
 }
 
-/* Added infinite scroll animation for logos */
 @keyframes scroll {
   0% {
     transform: translateX(0);
