@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   title: "Wyze Bank, Faça parte seja Wyze",
   description: "Wyze Bank, Faça parte seja Wyze",
   icons: {
-    icon: "/img?src=lg_files_wb/svg_files/icon_green_black.svg",
+    icon: "https://www.wyzebank.com/lg_files_wb/svg_files/icon_green_black.svg",
   },
 };
 
@@ -31,7 +31,7 @@ export default function RootLayout({
         <link
           rel="icon"
           type="image/png"
-          href="/img?src=lg_files_wb/svg_files/icon_green_black.svg"
+          href="https://www.wyzebank.com/lg_files_wb/svg_files/icon_green_black.svg"
         />
       </head>
       <body
