@@ -22,41 +22,55 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
   const [showEmailError, setShowEmailError] = useState(true)
   const [showPasswordInput, setShowPasswordInput] = useState(false)
 
-  const handleNext = async (e: React.FormEvent) => {
-    e.preventDefault()
+ const handleNext = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    if (step === "email") {
-      const { valid, message } = validateEmail(email)
-      if (!valid) {
-        setEmailError({ message: message || "Email inválido" })
-        setShowEmailError(true)
-        return
-      }
-      setEmailError(null)
-      setShowEmailError(false)
-      setLoading(true)
-      setTimeout(() => {
-        setLoading(false)
-        setStep("password")
-        setShowPasswordInput(true)
-      }, 1500)
-    } else {
-      const { valid, message } = validatePassword(password)
-      if (!valid) {
-        setPasswordError({ message: message || "Senha inválida" })
-        return
-      }
-      setPasswordError(null)
+  if (step === "email") {
+    const { valid, message } = validateEmail(email);
+    if (!valid) {
+      setEmailError({ message: message || "Email inválido" });
+      setShowEmailError(true);
+      return;
+    }
+    setEmailError(null);
+    setShowEmailError(false);
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      setStep("password");
+      setShowPasswordInput(true);
+    }, 1500);
+  } else {
+    const { valid, message } = validatePassword(password);
+    if (!valid) {
+      setPasswordError({ message: message || "Senha inválida" });
+      return;
+    }
+    setPasswordError(null);
 
-      setSubmitting(true)
-      const form = e.currentTarget as HTMLFormElement
-      form.reportValidity()
-      setTimeout(() => {
-        console.log("Login:", { email, password })
-        setSubmitting(false)
-      }, 1500)
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setPasswordError({ message: data.error || "Erro ao logar" });
+      } else {
+        // Redirecionar para /dash
+        window.location.href = data.redirect;
+      }
+    } catch (err) {
+      setPasswordError({ message: "Erro ao conectar com o servidor" });
+    } finally {
+      setSubmitting(false);
     }
   }
+};
 
   const handleBackToEmail = () => {
     setStep("email")
@@ -69,7 +83,11 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         <FieldGroup>
           <div className="flex flex-col items-center gap-4 text-center">
             <a href="/login" className="flex flex-col items-center gap-3 font-medium text-foreground">
-              <img className="h-14 w-14" src="lg_files_wb/svg_files/icon_green_black.svg" alt=""/>
+              <img
+  className="h-14 w-14"
+  src={`/img?src=lg_files_wb/svg_files/icon_green_black.svg`}
+  alt="Logo Wyze Bank"
+/>
             </a>
             <h1 className="text-[27px] font-bold text-foreground">Welcome to Wyze Bank.</h1>
             <FieldDescription className="text-[15px] text-muted-foreground">

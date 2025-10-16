@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "export", // ativa exportação estática
+  // output: "export", // ativa exportação estática
   eslint: {
     ignoreDuringBuilds: true,
   },

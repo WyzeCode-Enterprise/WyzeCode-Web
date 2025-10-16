@@ -1,41 +1,32 @@
-import { AppSidebar } from "@/components/app-sidebar"
-import { ChartAreaInteractive } from "@/components/chart-area-interactive"
-import { DataTable } from "@/components/data-table"
-import { SectionCards } from "@/components/section-cards"
-import { SiteHeader } from "@/components/site-header"
-import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar"
+// Server Component - Next.js App Router
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { db } from "../api/db";
+import jwt from "jsonwebtoken";
+import DashClient from "../api/DashClient";
 
-import data from "./data.json"
+export const dynamic = "force-dynamic";
 
-export default function Page() {
-  return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader />
+export default async function Page() {
+  const cookieStore = await cookies();
+  const session = cookieStore.get("wzb_lg")?.value;
 
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 max-w-[90rem] lg:mx-auto lg:w-full lg:px-0">
-              <SectionCards />
-              <div className="px-4 lg:px-6">
-                <ChartAreaInteractive />
-              </div>
-              <DataTable data={data} />
-            </div>
-          </div>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
-  )
+  if (!session) redirect("/login");
+
+  let user: { id: number; email: string; name: string } | null = null;
+
+  try {
+    const decoded: any = jwt.verify(session, process.env.JWT_SECRET || "supersecretkey");
+    const [users] = await db.query("SELECT * FROM users WHERE id = ?", [decoded.uid]);
+    if (!(users as any).length) redirect("/login");
+    user = (users as any)[0];
+  } catch (err) {
+    console.error("Erro ao validar token:", err);
+    redirect("/login");
+  }
+
+  const userName = user?.name || "Usuário";
+  const userEmail = user?.email || "Usuário";
+
+  return <DashClient userName={userName} userEmail={userEmail} />;
 }

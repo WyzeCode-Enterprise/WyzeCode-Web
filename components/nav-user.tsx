@@ -43,6 +43,25 @@ export function NavUser({
   const { isMobile } = useSidebar()
   const router = useRouter()
 
+  // Gera iniciais do primeiro e segundo nome
+  const getInitials = (name: string) => {
+    if (!name) return "U"
+    const parts = name.trim().split(" ")
+    const firstInitial = parts[0][0]?.toUpperCase() || ""
+    const secondInitial = parts[1]?.[0]?.toUpperCase() || ""
+    return firstInitial + secondInitial
+  }
+
+  const initials = getInitials(user.name)
+
+  // Trunca nomes maiores que 25 caracteres
+  const truncateName = (name: string, maxLength = 25) => {
+    if (!name) return "Usuário"
+    return name.length > maxLength ? name.slice(0, maxLength) + "…" : name
+  }
+
+  const displayName = truncateName(user.name)
+
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -54,10 +73,10 @@ export function NavUser({
             >
               <Avatar className="h-8 w-8 rounded-lg">
                 <AvatarImage src={user.avatar} alt={user.name} />
-                <AvatarFallback className="rounded-lg">YN</AvatarFallback>
+                <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{user.name}</span>
+                <span className="truncate font-medium">{displayName}</span>
                 <span className="truncate text-xs">{user.email}</span>
               </div>
               <ChevronsUpDown className="ml-auto size-4" />
@@ -73,10 +92,10 @@ export function NavUser({
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
                   <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-lg">YN</AvatarFallback>
+                  <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.name}</span>
+                  <span className="truncate font-medium">{displayName}</span>
                   <span className="truncate text-xs">{user.email}</span>
                 </div>
               </div>
@@ -114,7 +133,6 @@ export function NavUser({
               <LogOut />
               Log out
             </DropdownMenuItem>
-
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
