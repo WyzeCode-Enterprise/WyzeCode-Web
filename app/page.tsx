@@ -1,10 +1,4 @@
 import React from "react";
-import { Metadata } from "next";
-
-export const metadata: Metadata = {
-  title: "Página Inicial",
-  description: "Esta é uma página genérica do Next.js 13+"
-};
 
 export default function Page() {
   return (
