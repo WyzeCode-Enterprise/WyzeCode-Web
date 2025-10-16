@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Wyze Bank, Faça parte seja Wyze",
-  description: "Wyze Bank, Faça parte seja Wyze",
+  title: "Wyze Bank • O Melhor Banco Digital e Plataforma de Pagamentos Inteligentes",
+  description: "Wyze Bank é um banco digital completo com soluções de pagamentos integradas, tecnologia avançada e segurança máxima para empresas e clientes gerenciarem suas finanças com eficiência.",
   icons: {
     icon: "https://www.wyzebank.com/lg_files_wb/svg_files/icon_green_black.svg",
   },

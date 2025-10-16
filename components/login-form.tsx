@@ -49,26 +49,26 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
     setPasswordError(null);
 
     setSubmitting(true);
-    try {
-      const response = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+try {
+  const response = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
 
-      const data = await response.json();
+  const data = await response.json();
 
-      if (!response.ok) {
-        setPasswordError({ message: data.error || "Erro ao logar" });
-      } else {
-        // Redirecionar para /dash
-        window.location.href = data.redirect;
-      }
-    } catch (err) {
-      setPasswordError({ message: "Erro ao conectar com o servidor" });
-    } finally {
-      setSubmitting(false);
-    }
+  if (!response.ok) {
+    setPasswordError({ message: data.error || "Erro ao logar" });
+    setSubmitting(false); // libera apenas se houver erro
+  } else {
+    // ✅ mantém o botão travado e loader ativo até redirecionar
+    window.location.href = data.redirect;
+  }
+} catch (err) {
+  setPasswordError({ message: "Erro ao conectar com o servidor" });
+  setSubmitting(false); // libera apenas em caso de erro
+}
   }
 };
 
@@ -111,7 +111,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                 id="email"
                 name="username"
                 type="text"
-                placeholder="m@example.com"
+                placeholder="Enter your email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={step === "password" || loading}
