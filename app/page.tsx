@@ -1,4 +1,5 @@
 import React from "react";
+import { SpeedInsights } from "@vercel/speed-insights/next"
 
 export default function Page() {
   return (
@@ -9,6 +10,7 @@ export default function Page() {
           Você não possui permição para acessar esta página. Por favor, entre em contato com o administrador do sistema caso ache que isso é um erro. 
         </p>
       </div>
+      <SpeedInsights/>
     </main>
   );
 }
