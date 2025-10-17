@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Loader2, Eye, EyeOff, ArrowLeft, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -40,6 +40,42 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
   const [telefone, setTelefone] = useState("")
   const [cpfCnpj, setCpfCnpj] = useState("")
   const [registerError, setRegisterError] = useState<string | null>(null)
+
+// Recupera email salvo apenas se estiver no registro
+useEffect(() => {
+  const savedStep = sessionStorage.getItem("savedStep")
+  if (savedStep === "register") {
+    const savedEmail = sessionStorage.getItem("savedEmail")
+    const savedNome = sessionStorage.getItem("savedNome")
+    const savedTelefone = sessionStorage.getItem("savedTelefone")
+    const savedCpfCnpj = sessionStorage.getItem("savedCpfCnpj")
+
+    if (savedEmail) setEmail(savedEmail)
+    setStep("register")
+    if (savedNome) setNome(savedNome)
+    if (savedTelefone) setTelefone(savedTelefone)
+    if (savedCpfCnpj) setCpfCnpj(savedCpfCnpj)
+  }
+}, [])
+
+// Salva dados de registro apenas no step register
+useEffect(() => {
+  if (step === "register") {
+    sessionStorage.setItem("savedStep", "register")
+    sessionStorage.setItem("savedEmail", email)
+    sessionStorage.setItem("savedNome", nome)
+    sessionStorage.setItem("savedTelefone", telefone)
+    sessionStorage.setItem("savedCpfCnpj", cpfCnpj)
+  } else {
+    // Limpa tudo se sair do registro
+    sessionStorage.removeItem("savedStep")
+    sessionStorage.removeItem("savedEmail")
+    sessionStorage.removeItem("savedNome")
+    sessionStorage.removeItem("savedTelefone")
+    sessionStorage.removeItem("savedCpfCnpj")
+  }
+}, [step, email, nome, telefone, cpfCnpj])
+
 
   const handleNext = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -176,9 +212,22 @@ else if (stepOtp && otp.length === 6) {
   }
 
   const handleBackToEmail = () => {
-    setStep("email")
-    setShowPasswordInput(false)
-  }
+  setStep("email");
+  setShowPasswordInput(false);
+  setStepOtp(false);
+  setOtp("");
+  setNome("");
+  setTelefone("");
+  setCpfCnpj("");
+  setPassword("");
+  setRegisterError(null);
+  setOtpError(null);
+  setEmailError(null);
+  setPasswordError(null);
+  setSubmitting(false);
+  setOtpSubmitting(false);
+};
+
 
   return (
     <div className={cn("flex flex-col gap-8 text-foreground bg-background", className)} {...props}>
@@ -189,7 +238,7 @@ else if (stepOtp && otp.length === 6) {
             <a href="/login" className="flex flex-col items-center gap-3 font-medium text-foreground">
               <img
                 className="h-14 w-14"
-                src="https://wyzebank.com/lg_files_wb/svg_files/icon_green_black.svg"
+                src="https://www.wyzebank.com/lg_files_wb/svg_files/icon_green_black.svg"
                 alt="Logo Wyze Bank"
               />
             </a>
@@ -263,8 +312,13 @@ else if (stepOtp && otp.length === 6) {
 {/* Telefone com máscara dinâmica */}
 <Input
   type="text"
-  placeholder="Número de telefone (ex: +55 11 99999-9999)"
+  placeholder="Número de telefone"
   value={telefone}
+  onFocus={() => {
+    if (!telefone.startsWith("+55")) {
+      setTelefone("+55 ");
+    }
+  }}
   onChange={(e) => {
     let val = e.target.value.replace(/\D/g, "");
     // +CC (2) + DDD (2) + número (9) = 13 dígitos
@@ -279,7 +333,6 @@ else if (stepOtp && otp.length === 6) {
     setTelefone(formatted);
   }}
   onBlur={() => {
-    // opcional: normalizar e validar localmente antes de enviar
     const digits = telefone.replace(/\D/g, "");
     if (digits.length !== 13) {
       // você pode setar um erro de UI aqui
@@ -298,9 +351,10 @@ else if (stepOtp && otp.length === 6) {
 
 
 
+
 <Input
   type="text"
-  placeholder="CPF ou CNPJ"
+  placeholder="Cpf ou Cnpj"
   value={cpfCnpj}
   onChange={(e) => {
     let val = e.target.value.replace(/\D/g, ""); // só números

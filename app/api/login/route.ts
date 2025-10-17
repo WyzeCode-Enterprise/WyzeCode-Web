@@ -3,6 +3,7 @@ import { db } from "../db";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
+import bcrypt from "bcryptjs";
 
 const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
 
@@ -28,7 +29,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Senha obrigatória" }, { status: 400 });
     }
 
-    if (password !== user.password_hash) {
+    // A senha enviada pelo cliente é a senha em texto plano — comparar com o hash salvo (bcrypt)
+    const storedHash = user.password_hash;
+    const passwordMatches = await bcrypt.compare(password, storedHash);
+
+    if (!passwordMatches) {
       return NextResponse.json({ error: "Email ou senha incorretos" }, { status: 401 });
     }
 
@@ -36,14 +41,15 @@ export async function POST(req: NextRequest) {
     const sessionToken = jwt.sign({ uid: user.id, sid: uuidv4() }, JWT_SECRET, { expiresIn: "24h" });
     const expireToken = jwt.sign({ uid: user.id, sid: uuidv4() }, JWT_SECRET, { expiresIn: "25h" });
 
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0] || "0.0.0.0";
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
     const userAgent = req.headers.get("user-agent") || "";
 
     let geo: any = {};
     try {
-      const response = await axios.get(`https://ipapi.co/${ip}/json/`);
+      // tenta obter informações geográficas do IP (pode falhar em dev/local)
+      const response = await axios.get(`https://ipapi.co/${ip}/json/`, { timeout: 3000 });
       geo = response.data || {};
-    } catch {
+    } catch (e) {
       geo = {};
     }
 
@@ -53,8 +59,8 @@ export async function POST(req: NextRequest) {
       [
         user.id,
         ip,
-        userAgent,
-        userAgent,
+        userAgent, // browser
+        userAgent, // os (você pode parsear userAgent melhor se quiser)
         geo.region || "",
         geo.country_name || "",
         geo.region_code || "",
@@ -67,8 +73,23 @@ export async function POST(req: NextRequest) {
     );
 
     const res = NextResponse.json({ success: true, redirect: "/dash" });
-    res.cookies.set("wzb_lg", sessionToken, { httpOnly: true, path: "/", maxAge: 86400 });
-    res.cookies.set("wzb_lg_e", expireToken, { httpOnly: true, path: "/", maxAge: 90000 });
+
+    const isProd = process.env.NODE_ENV === "production";
+    // define cookies (httpOnly). em produção, marque secure:true
+    res.cookies.set("wzb_lg", sessionToken, {
+      httpOnly: true,
+      path: "/",
+      maxAge: 86400, // 24h em segundos
+      secure: isProd,
+      sameSite: "lax",
+    });
+    res.cookies.set("wzb_lg_e", expireToken, {
+      httpOnly: true,
+      path: "/",
+      maxAge: 90000, // ~25h em segundos
+      secure: isProd,
+      sameSite: "lax",
+    });
 
     return res;
   } catch (err) {

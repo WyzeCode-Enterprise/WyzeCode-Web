@@ -46,7 +46,7 @@ export function TeamSwitcher({
             >
               <div className="flex aspect-square size-8 items-center justify-center rounded-[7px] overflow-hidden">
                 <img
-                  src="https://wyzebank.com/lg_files_wb/svg_files/icon_green_black.svg"
+                  src="https://www.wyzebank.com/lg_files_wb/svg_files/icon_green_black.svg"
                   alt="Wyze Bank Logo"
                   className="w-full h-full object-contain"
                 />
