@@ -7,93 +7,128 @@ import bcrypt from "bcryptjs";
 
 const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
 
+/**
+ * Função para identificar de forma amigável o navegador e sistema operacional
+ */
+function parseUserAgent(ua: string) {
+  const u = ua.toLowerCase();
+  let browser = "Desconhecido";
+  let os = "Desconhecido";
+
+  if (u.includes("chrome") && !u.includes("edg") && !u.includes("opr"))
+    browser = "Google Chrome";
+  else if (u.includes("edg"))
+    browser = "Microsoft Edge";
+  else if (u.includes("firefox"))
+    browser = "Mozilla Firefox";
+  else if (u.includes("safari") && !u.includes("chrome"))
+    browser = "Safari";
+  else if (u.includes("opr") || u.includes("opera"))
+    browser = "Opera";
+
+  if (u.includes("windows nt 10")) os = "Windows 10";
+  else if (u.includes("windows nt 6.3")) os = "Windows 8.1";
+  else if (u.includes("mac os x")) os = "macOS";
+  else if (u.includes("android")) os = "Android";
+  else if (u.includes("iphone") || u.includes("ipad")) os = "iOS";
+  else if (u.includes("linux")) os = "Linux";
+
+  return { browser, os };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { email, password } = await req.json();
+    if (!email) return NextResponse.json({ error: "Email é obrigatório" }, { status: 400 });
 
-    if (!email) {
-      return NextResponse.json({ error: "Email é obrigatório" }, { status: 400 });
-    }
+    // Busca usuário
+    const [rows] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
+    const user = (rows as any)[0];
+    if (!user) return NextResponse.json({ newUser: true });
 
-    // Buscar usuário no banco
-    const [users] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
-    const user = (users as any)[0];
-
-    // Se o email não existir → novo cadastro
-    if (!user) {
-      return NextResponse.json({ newUser: true });
-    }
-
-    // Caso já exista, prossegue com o login
-    if (!password) {
+    if (!password)
       return NextResponse.json({ error: "Senha obrigatória" }, { status: 400 });
-    }
 
-    // A senha enviada pelo cliente é a senha em texto plano — comparar com o hash salvo (bcrypt)
-    const storedHash = user.password_hash;
-    const passwordMatches = await bcrypt.compare(password, storedHash);
-
-    if (!passwordMatches) {
+    // Verifica senha (bcrypt)
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid)
       return NextResponse.json({ error: "Email ou senha incorretos" }, { status: 401 });
-    }
 
-    // Gera tokens e salva login
-    const sessionToken = jwt.sign({ uid: user.id, sid: uuidv4() }, JWT_SECRET, { expiresIn: "24h" });
-    const expireToken = jwt.sign({ uid: user.id, sid: uuidv4() }, JWT_SECRET, { expiresIn: "25h" });
+    // Captura IP e UA
+    const ip =
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      req.headers.get("cf-connecting-ip") ||
+      req.headers.get("fastly-client-ip") ||
+      "0.0.0.0";
 
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
-    const userAgent = req.headers.get("user-agent") || "";
+    const ua = req.headers.get("user-agent") || "Desconhecido";
+    const { browser, os } = parseUserAgent(ua);
 
+    // Tenta obter localização
     let geo: any = {};
     try {
-      // tenta obter informações geográficas do IP (pode falhar em dev/local)
-      const response = await axios.get(`https://ipapi.co/${ip}/json/`, { timeout: 3000 });
-      geo = response.data || {};
-    } catch (e) {
+      const r = await axios.get(`https://ipapi.co/${ip}/json/`, { timeout: 3000 });
+      geo = r.data || {};
+    } catch {
       geo = {};
     }
 
+    // Cria tokens
+    const sessionId = uuidv4();
+    const sessionToken = jwt.sign({ uid: user.id, sid: sessionId }, JWT_SECRET, { expiresIn: "24h" });
+    const expireToken = jwt.sign({ uid: user.id, sid: sessionId }, JWT_SECRET, { expiresIn: "25h" });
+
+    // Salva login detalhado
     await db.query(
-      `INSERT INTO logins (user_id, ip, browser, os, region, country, state, city, latitude, longitude, cookie_session, cookie_expire)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO logins (
+        user_id, ip, browser, os, region, country, state, city,
+        latitude, longitude, isp, timezone, cookie_session, cookie_expire
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         user.id,
         ip,
-        userAgent, // browser
-        userAgent, // os (você pode parsear userAgent melhor se quiser)
+        browser,
+        os,
         geo.region || "",
         geo.country_name || "",
         geo.region_code || "",
         geo.city || "",
         geo.latitude || 0,
         geo.longitude || 0,
+        geo.org || "",
+        geo.timezone || "",
         sessionToken,
         expireToken,
       ]
     );
 
-    const res = NextResponse.json({ success: true, redirect: "/dash" });
+    // Configura resposta
+    const res = NextResponse.json({
+      success: true,
+      redirect: "/dash",
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+      },
+    });
 
     const isProd = process.env.NODE_ENV === "production";
-    // define cookies (httpOnly). em produção, marque secure:true
-    res.cookies.set("wzb_lg", sessionToken, {
+    const cookieOptions = {
       httpOnly: true,
-      path: "/",
-      maxAge: 86400, // 24h em segundos
       secure: isProd,
-      sameSite: "lax",
-    });
-    res.cookies.set("wzb_lg_e", expireToken, {
-      httpOnly: true,
+      sameSite: "lax" as const,
       path: "/",
-      maxAge: 90000, // ~25h em segundos
-      secure: isProd,
-      sameSite: "lax",
-    });
+    };
+
+    res.cookies.set("wzb_lg", sessionToken, { ...cookieOptions, maxAge: 86400 });
+    res.cookies.set("wzb_lg_e", expireToken, { ...cookieOptions, maxAge: 90000 });
 
     return res;
-  } catch (err) {
-    console.error("Erro interno na API login:", err);
-    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+  } catch (err: any) {
+    console.error("[LOGIN ERROR]", err);
+    return NextResponse.json({ error: "Erro interno no servidor" }, { status: 500 });
   }
 }
