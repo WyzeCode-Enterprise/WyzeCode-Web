@@ -5,12 +5,8 @@ import { randomInt } from "crypto";
 import { htmlMailTemplate } from "../html-mail/template";
 import dotenv from "dotenv";
 
-// 🔧 Garante que o .env esteja carregado
 dotenv.config();
 
-// ========================
-// 🔐 SMTP CONFIG via .env
-// ========================
 const SMTP_USER = process.env.SMTP_USER!;
 const SMTP_PASS = process.env.SMTP_PASS!;
 const SMTP_HOST = process.env.SMTP_HOST || "smtp.hostinger.com";
@@ -28,9 +24,6 @@ const transporter = nodemailer.createTransport({
   tls: { rejectUnauthorized: false },
 });
 
-// ========================
-// ⚙️ FUNÇÕES AUXILIARES
-// ========================
 function generateOTP() {
   return randomInt(100000, 999999).toString();
 }
@@ -40,16 +33,13 @@ function friendlyBrowser(ua?: string) {
   const isMobile = /Mobile|Android|iPhone|iPad|iPod/i.test(ua);
   const browser =
     /Edg\//.test(ua) ? "Edge" :
-    /Chrome\//.test(ua) ? "Chrome" :
-    /Safari\//.test(ua) && !/Chrome\//.test(ua) ? "Safari" :
-    /Firefox\//.test(ua) ? "Firefox" :
-    /OPR\//.test(ua) ? "Opera" : "Navegador";
+      /Chrome\//.test(ua) ? "Chrome" :
+        /Safari\//.test(ua) && !/Chrome\//.test(ua) ? "Safari" :
+          /Firefox\//.test(ua) ? "Firefox" :
+            /OPR\//.test(ua) ? "Opera" : "Navegador";
   return `${browser}${isMobile ? " (mobile)" : ""}`;
 }
 
-// ========================
-// 📬 ROTA: REENVIO DE OTP
-// ========================
 export async function POST(req: NextRequest) {
   try {
     const { email } = await req.json();

@@ -6,12 +6,8 @@ import bcrypt from "bcryptjs";
 import { db } from "../db";
 import dotenv from "dotenv";
 
-// garante que as variáveis do .env estejam carregadas
 dotenv.config();
 
-// ========================
-// 🔐 SMTP CONFIG via .env
-// ========================
 const SMTP_USER = process.env.SMTP_USER!;
 const SMTP_PASS = process.env.SMTP_PASS!;
 const SMTP_HOST = process.env.SMTP_HOST || "smtp.hostinger.com";
@@ -29,21 +25,157 @@ const transporter = nodemailer.createTransport({
   tls: { rejectUnauthorized: false },
 });
 
-// ========================
-// 📱 UTILIDADES / HELPERS
-// ========================
 const validDDDs = [
-  "11","12","13","14","15","16","17","18","19",
-  "21","22","24","27","28",
-  "31","32","33","34","35","37","38",
-  "41","42","43","44","45","46",
-  "47","48","49",
-  "51","53","54","55",
-  "61","62","63","64","65","66","67","68","69",
-  "71","73","74","75","77","79",
-  "81","82","83","84","85","86","87","88","89",
-  "91","92","93","94","95","96","97","98","99",
+  "11", "12", "13", "14", "15", "16", "17", "18", "19",
+  "21", "22", "24", "27", "28",
+  "31", "32", "33", "34", "35", "37", "38",
+  "41", "42", "43", "44", "45", "46",
+  "47", "48", "49",
+  "51", "53", "54", "55",
+  "61", "62", "63", "64", "65", "66", "67", "68", "69",
+  "71", "73", "74", "75", "77", "79",
+  "81", "82", "83", "84", "85", "86", "87", "88", "89",
+  "91", "92", "93", "94", "95", "96", "97", "98", "99",
 ];
+
+
+async function fetchJSONWithTimeout(url: string, opts?: { timeoutMs?: number; retries?: number; init?: RequestInit }) {
+  const timeoutMs = opts?.timeoutMs ?? 20000;
+  const retries = opts?.retries ?? 1;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const resp = await fetch(url, { ...(opts?.init || {}), signal: ctrl.signal, cache: "no-store" });
+      const data = await resp.json().catch(() => ({}));
+      return { ok: resp.ok, data, status: resp.status };
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await new Promise(r => setTimeout(r, 300 + Math.random() * 400));
+    } finally {
+      clearTimeout(to);
+    }
+  }
+  return { ok: false, data: null, status: 0 };
+}
+
+const HUBDEV_TOKEN = process.env.HUBDEV_TOKEN || "188447075BqtvRFdAeC340235480";
+const HUBDEV_BASE = "https://ws.hubdodesenvolvedor.com.br/v2/cpf/";
+
+function normalizeNameStrict(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+}
+
+function namesEqual(a: string, b: string): boolean { return normalizeNameStrict(a) === normalizeNameStrict(b); }
+
+function parsePtBrDate(dmy: string): Date | null {
+  const m = dmy?.match?.(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const d = new Date(`${m[3]}-${m[2]}-${m[1]}T00:00:00Z`);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function ageFrom(birth: Date, ref: Date = new Date()): number {
+  const y = ref.getUTCFullYear() - birth.getUTCFullYear();
+  const m = ref.getUTCMonth() - birth.getUTCMonth();
+  const d = ref.getUTCDate() - birth.getUTCDate();
+  return m > 0 || (m === 0 && d >= 0) ? y : y - 1;
+}
+
+async function hubDevCpfLookup(cpf: string, birthPtBr?: string, extra: Record<string, string> = {}) {
+  const digits = cpf.replace(/\D/g, "");
+  const params = new URLSearchParams({ cpf: digits, token: HUBDEV_TOKEN, ...extra });
+  if (birthPtBr) params.set("data", birthPtBr);
+  const url = `${HUBDEV_BASE}?${params.toString()}`;
+
+  const { ok, data } = await fetchJSONWithTimeout(url, { timeoutMs: 25000, retries: 1 });
+  if (!ok || !data || data.return !== "OK" || data.status !== true) {
+    const msg = typeof data?.message === "string" ? data.message : "Consulta não retornou OK.";
+    const err: any = new Error(msg);
+    err.code = "HUBDEV_NOK";
+    err.raw = data;
+    throw err;
+  }
+  return data;
+}
+
+async function cpfHubLookup(cpf: string) {
+  const key = process.env.CPF_API_KEY as string | undefined;
+  if (!key) return null;
+  const digits = cpf.replace(/\D/g, "");
+  const url = `https://api.cpfhub.io/v1/cpf/${digits}`;
+  const { ok, data } = await fetchJSONWithTimeout(url, { timeoutMs: 20000, retries: 1, init: { headers: { "x-api-key": key } } });
+  if (!ok || !data) return null;
+  const nome = data?.nome;
+  const birthRaw = data?.data_nascimento || data?.nascimento || data?.birthdate || data?.dataNascimento;
+  let birth: Date | null = null;
+  if (typeof birthRaw === "string") {
+    const iso = birthRaw.match?.(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (iso) {
+      const d = new Date(`${iso[1]}-${iso[2]}-${iso[3]}T00:00:00Z`);
+      if (!isNaN(d.getTime())) birth = d;
+    } else {
+      birth = parsePtBrDate(birthRaw);
+    }
+  }
+  return { nome, birth };
+}
+
+type PFCheckFail =
+  | "UNDERAGE"
+  | "NAME_MISMATCH"
+  | "NO_DATA"
+  | "SERVICE_UNAVAILABLE"
+  | "NEEDS_BIRTH";
+
+async function validatePF_Strict(cpf: string, nomeInformado: string): Promise<
+  | { ok: true }
+  | { ok: false; reason: PFCheckFail; detail?: string }
+> {
+  try {
+    const hub = await hubDevCpfLookup(cpf);
+    const result = hub?.result || {};
+    const nomeOficial = result?.nome_da_pf as string | undefined;
+    const nascimentoStr = result?.data_nascimento as string | undefined;
+
+    if (!nomeOficial || !nascimentoStr) {
+      throw Object.assign(new Error("Sem nome/data no HubDev"), { code: "HUBDEV_NO_DATA" });
+    }
+    if (!namesEqual(nomeInformado, nomeOficial)) {
+      return { ok: false, reason: "NAME_MISMATCH", detail: "Nome não confere com o CPF." };
+    }
+    const birth = parsePtBrDate(nascimentoStr);
+    if (!birth) {
+      throw Object.assign(new Error("Data inválida no HubDev"), { code: "HUBDEV_BAD_BIRTH" });
+    }
+    if (ageFrom(birth) < 18) return { ok: false, reason: "UNDERAGE" };
+    return { ok: true };
+
+  } catch (e: any) {
+    const msg = (e?.message || "").toString();
+
+    const needsBirth = /Data de Nascimento n[oã]o informada/i.test(msg) || e?.code === "HUBDEV_NO_DATA" || e?.code === "HUBDEV_BAD_BIRTH";
+    if (needsBirth) {
+      const fb = await cpfHubLookup(cpf);
+      if (fb && fb.nome && fb.birth) {
+        if (!namesEqual(nomeInformado, fb.nome)) {
+          return { ok: false, reason: "NAME_MISMATCH", detail: "Nome não confere com o CPF." };
+        }
+        if (ageFrom(fb.birth) < 18) {
+          return { ok: false, reason: "UNDERAGE" };
+        }
+        return { ok: true };
+      }
+      return { ok: false, reason: "NEEDS_BIRTH", detail: "Fonte oficial exigiu data e não foi possível obter via fallback." };
+    }
+
+    return { ok: false, reason: "SERVICE_UNAVAILABLE", detail: msg };
+  }
+}
+
+
+
 
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
@@ -154,18 +286,10 @@ function cpfCnpjFingerprint(cpfCnpjRaw: string): string {
   return h.digest("hex");
 }
 
-
-/**
- * Verifica duplicidade de telefone (SQL) e CPF/CNPJ (fingerprint + fallback).
- * - Telefone: SELECT direto no `users`.
- * - CPF/CNPJ: primeiro tenta por fingerprint (rápido); se quiser máxima compat com dados antigos,
- *   pode checar bcrypt como fallback (mantive opcional).
- */
 async function assertUniqueIdentity(phoneRaw: string, cpfCnpjRaw: string, withBcryptFallback = false) {
   const normalizedPhone = normalizePhone(phoneRaw);
   const fingerprint = cpfCnpjFingerprint(cpfCnpjRaw);
 
-  // 1) Telefone
   const [samePhone] = await db.query(
     "SELECT id FROM users WHERE phone=? LIMIT 1",
     [normalizedPhone]
@@ -174,7 +298,6 @@ async function assertUniqueIdentity(phoneRaw: string, cpfCnpjRaw: string, withBc
     throw new Error("Este número de telefone já está cadastrado.");
   }
 
-  // 2) CPF/CNPJ via fingerprint
   const [sameDocFast] = await db.query(
     "SELECT id FROM users WHERE cpf_cnpj_fingerprint=? LIMIT 1",
     [fingerprint]
@@ -183,7 +306,6 @@ async function assertUniqueIdentity(phoneRaw: string, cpfCnpjRaw: string, withBc
     throw new Error("Este CPF/CNPJ já está cadastrado.");
   }
 
-  // (Opcional) 3) Fallback por bcrypt para bases antigas sem fingerprint populado
   if (withBcryptFallback) {
     const digits = cpfCnpjRaw.replace(/\D/g, "");
     const [rows] = await db.query("SELECT id, cpf_or_cnpj FROM users");
@@ -203,7 +325,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Todos os campos são obrigatórios." }, { status: 400 });
     }
 
-    // IP e UA
     const xf = req.headers.get("x-forwarded-for");
     const ip = xf ? xf.split(",")[0].trim()
       : req.headers.get("cf-connecting-ip")
@@ -214,28 +335,43 @@ export async function POST(req: NextRequest) {
     const userAgent = req.headers.get("user-agent") || "";
     const friendlyBrowser = parseUserAgentFriendly(userAgent);
 
-    // Valida telefone
     const phoneOk = await isValidPhone(telefone);
     if (!phoneOk) {
       return NextResponse.json({ error: "Número de Telefone inválido. (ex: +55 11 99999-9999)" }, { status: 400 });
     }
 
-    // 🔒 Verificação de duplicidade ANTES de gerar/enviar OTP
     try {
-      await assertUniqueIdentity(telefone, cpfCnpj /* , true <- ligue se precisar fallback bcrypt */);
+      await assertUniqueIdentity(telefone, cpfCnpj);
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
 
-    // Validação CPF/CNPJ (estrutura +, e opcionalmente nome via API)
     if (cpfCnpj.replace(/\D/g, "").length <= 11) {
       if (!isValidCPF(cpfCnpj)) {
         return NextResponse.json({ error: "CPF inválido." }, { status: 400 });
       }
-      const cpfOk = await validateCPFWithName(cpfCnpj, nome);
-      if (!cpfOk) {
-        return NextResponse.json({ error: "CPF não confere com o nome informado." }, { status: 400 });
+
+      const pf = await validatePF_Strict(cpfCnpj, nome);
+
+      if (!pf.ok) {
+        switch (pf.reason) {
+          case "UNDERAGE":
+            return NextResponse.json({ error: "Você deve possuir +18 para continuar." }, { status: 400 });
+          case "NAME_MISMATCH":
+            return NextResponse.json({ error: "CPF não confere com o nome informado." }, { status: 400 });
+          case "NEEDS_BIRTH":
+            return NextResponse.json({
+              error: "Você deve possuir +18 anos para continuar"
+            }, { status: 400 });
+          case "NO_DATA":
+          case "SERVICE_UNAVAILABLE":
+          default:
+            return NextResponse.json({
+              error: "Falha ao validar CPF no serviço oficial. Tente novamente em instantes."
+            }, { status: 400 });
+        }
       }
+
     } else {
       if (!isValidCNPJ(cpfCnpj)) {
         return NextResponse.json({ error: "CNPJ inválido." }, { status: 400 });
@@ -246,21 +382,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // valida senha
     if (!isValidPassword(password)) {
       return NextResponse.json({
         error: "Senha inválida. Deve conter letra maiúscula, minúscula, número, caractere especial e mínimo 8 caracteres."
       }, { status: 400 });
     }
 
-    // busca último OTP por e-mail
     const [existing] = await db.query(
       "SELECT * FROM otp_codes WHERE email=? ORDER BY created_at DESC LIMIT 1",
       [email]
     );
     const lastOtp = (existing as any)[0];
 
-    // --- ramo: sem otp recebido -> gerar e enviar ---
     if (!otpUser) {
       const otp = generateOTP();
       const expireAt = new Date(Date.now() + 10 * 60 * 1000);
@@ -286,7 +419,6 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // e-mail de verificação
       const emailBody = htmlMailTemplate
         .replace(/{{OTP}}/g, otp)
         .replace(/{{NOME}}/g, nome)
@@ -303,16 +435,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: "Código enviado para seu email." });
     }
 
-    // --- ramo: validação do OTP recebido pelo usuário ---
     if (!lastOtp) return NextResponse.json({ error: "Nenhum OTP encontrado." }, { status: 400 });
     if (lastOtp.status !== "pending") return NextResponse.json({ error: "OTP já utilizado." }, { status: 400 });
     if (new Date(lastOtp.expires_at) < new Date()) return NextResponse.json({ error: "OTP expirado." }, { status: 400 });
     if (lastOtp.otp !== otpUser) return NextResponse.json({ error: "Código incorreto." }, { status: 400 });
 
-    // 🔒 Revalida duplicidade antes do INSERT final (protege contra corrida)
     try {
-      await assertUniqueIdentity(lastOtp.telefone, lastOtp.cpf_cnpj /* aqui lastOtp.cpf_cnpj é hash, então passe o valor informado no request se quiser revalidar; melhor revalidar com os dados do OTP: */);
-      // Melhor: revalidar por fingerprint do OTP:
+      await assertUniqueIdentity(lastOtp.telefone, lastOtp.cpf_cnpj);
       const [fastCheck] = await db.query(
         "SELECT id FROM users WHERE phone=? OR cpf_cnpj_fingerprint=? LIMIT 1",
         [normalizePhone(lastOtp.telefone), lastOtp.cpf_cnpj_fingerprint]
@@ -326,10 +455,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
 
-    // marca OTP validado
     await db.query(`UPDATE otp_codes SET status='validated' WHERE id=?`, [lastOtp.id]);
 
-    // cria usuário usando os dados já consolidados no OTP
     try {
       await db.query(
         `INSERT INTO users (email, password_hash, created_at, name, phone, cpf_or_cnpj, cpf_cnpj_fingerprint)
@@ -339,8 +466,8 @@ export async function POST(req: NextRequest) {
           lastOtp.password_hash,
           lastOtp.nome,
           normalizePhone(lastOtp.telefone),
-          lastOtp.cpf_cnpj,                 // bcrypt hash
-          lastOtp.cpf_cnpj_fingerprint,     // sha256 fingerprint
+          lastOtp.cpf_cnpj,
+          lastOtp.cpf_cnpj_fingerprint,
         ]
       );
     } catch (e: any) {

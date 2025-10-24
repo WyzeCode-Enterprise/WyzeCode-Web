@@ -8,16 +8,11 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { FieldLabel } from "@/components/ui/field"
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-  InputOTPSeparator
-} from "@/components/ui/input-otp"
+import { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator } from "@/components/ui/input-otp"
 import { validateEmail, validatePassword } from "@/app/api/emailValidation"
 
 export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
-  const [step, setStep] = useState<"email" | "password" | "register">("email")
+  const [step, setStep] = useState<"login" | "email" | "password" | "register">("email")
   const [loading, setLoading] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -28,59 +23,57 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
   const [showEmailError, setShowEmailError] = useState(true)
   const [showPasswordInput, setShowPasswordInput] = useState(false)
 
-  // Estado OTP
   const [stepOtp, setStepOtp] = useState(false)
   const [otp, setOtp] = useState("")
   const [otpError, setOtpError] = useState<string | null>(null)
   const [otpSubmitting, setOtpSubmitting] = useState(false)
   const [resending, setResending] = useState(false)
 
-  // Campos de registro
+  const [otpSuccess, setOtpSuccess] = useState(false)
+
   const [nome, setNome] = useState("")
   const [telefone, setTelefone] = useState("")
   const [cpfCnpj, setCpfCnpj] = useState("")
   const [registerError, setRegisterError] = useState<string | null>(null)
 
-// Recupera email salvo apenas se estiver no registro
-useEffect(() => {
-  const savedStep = sessionStorage.getItem("savedStep")
-  if (savedStep === "register") {
-    const savedEmail = sessionStorage.getItem("savedEmail")
-    const savedNome = sessionStorage.getItem("savedNome")
-    const savedTelefone = sessionStorage.getItem("savedTelefone")
-    const savedCpfCnpj = sessionStorage.getItem("savedCpfCnpj")
+  useEffect(() => {
+    const savedStep = sessionStorage.getItem("savedStep")
+    if (savedStep === "register") {
+      const savedEmail = sessionStorage.getItem("savedEmail")
+      const savedNome = sessionStorage.getItem("savedNome")
+      const savedTelefone = sessionStorage.getItem("savedTelefone")
+      const savedCpfCnpj = sessionStorage.getItem("savedCpfCnpj")
 
-    if (savedEmail) setEmail(savedEmail)
-    setStep("register")
-    if (savedNome) setNome(savedNome)
-    if (savedTelefone) setTelefone(savedTelefone)
-    if (savedCpfCnpj) setCpfCnpj(savedCpfCnpj)
-  }
-}, [])
+      if (savedEmail) setEmail(savedEmail)
+      setStep("register")
+      if (savedNome) setNome(savedNome)
+      if (savedTelefone) setTelefone(savedTelefone)
+      if (savedCpfCnpj) setCpfCnpj(savedCpfCnpj)
+    }
+  }, [])
 
-// Salva dados de registro apenas no step register
-useEffect(() => {
-  if (step === "register") {
-    sessionStorage.setItem("savedStep", "register")
-    sessionStorage.setItem("savedEmail", email)
-    sessionStorage.setItem("savedNome", nome)
-    sessionStorage.setItem("savedTelefone", telefone)
-    sessionStorage.setItem("savedCpfCnpj", cpfCnpj)
-  } else {
-    // Limpa tudo se sair do registro
-    sessionStorage.removeItem("savedStep")
-    sessionStorage.removeItem("savedEmail")
-    sessionStorage.removeItem("savedNome")
-    sessionStorage.removeItem("savedTelefone")
-    sessionStorage.removeItem("savedCpfCnpj")
-  }
-}, [step, email, nome, telefone, cpfCnpj])
+
+  useEffect(() => {
+    if (step === "register") {
+      sessionStorage.setItem("savedStep", "register")
+      sessionStorage.setItem("savedEmail", email)
+      sessionStorage.setItem("savedNome", nome)
+      sessionStorage.setItem("savedTelefone", telefone)
+      sessionStorage.setItem("savedCpfCnpj", cpfCnpj)
+    } else {
+      sessionStorage.removeItem("savedStep")
+      sessionStorage.removeItem("savedEmail")
+      sessionStorage.removeItem("savedNome")
+      sessionStorage.removeItem("savedTelefone")
+      sessionStorage.removeItem("savedCpfCnpj")
+    }
+  }, [step, email, nome, telefone, cpfCnpj])
+
 
 
   const handleNext = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // ---------------- EMAIL ----------------
     if (step === "email") {
       const { valid, message } = validateEmail(email)
       if (!valid) {
@@ -106,7 +99,6 @@ useEffect(() => {
           return
         }
 
-        // Usuário existente, vai para senha
         setStep("password")
         setShowPasswordInput(true)
       } catch {
@@ -115,7 +107,6 @@ useEffect(() => {
       }
     }
 
-    // ---------------- PASSWORD ----------------
     else if (step === "password") {
       const { valid, message } = validatePassword(password)
       if (!valid) {
@@ -144,9 +135,7 @@ useEffect(() => {
       }
     }
 
-    // ---------------- REGISTER ----------------
     else if (step === "register") {
-      // Primeiro passo: enviar OTP
       if (!stepOtp) {
         if (!nome || !telefone || !cpfCnpj || !password) {
           setRegisterError("Preencha todos os campos.")
@@ -167,73 +156,95 @@ useEffect(() => {
           if (!response.ok) {
             setRegisterError(data.error || "Erro ao registrar")
           } else {
-            setStepOtp(true) // ativa passo OTP
+            setStepOtp(true)
           }
         } catch {
           setRegisterError("Erro ao conectar com o servidor")
           setSubmitting(false)
         }
       }
-     // segundo passo: validar OTP
-else if (stepOtp && otp.length === 6) {
-  setOtpSubmitting(true); // ativa loader
-
-  try {
-    const response = await fetch("/api/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, nome, telefone, cpfCnpj, password, otp }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      setOtpError(data.error || "Erro ao validar OTP");
-      setOtpSubmitting(false);
-    } else {
-      // espera 2s antes de trocar a tela (simula o loader do backend)
-      setTimeout(() => {
-        setStep("email");      // reinicia fluxo para login
-        setOtp("");
-        setStepOtp(false);
-        setEmail(data.email);  // preenche email
-        setPassword("");
+      else if (stepOtp && otp.length === 6) {
+        setOtpSubmitting(true);
         setOtpError(null);
-        setSubmitting(false);
-        setOtpSubmitting(false); // garante que o botão Next funcione
-      }, 2000);
-    }
-  } catch {
-    setOtpError("Erro ao conectar com o servidor");
-    setOtpSubmitting(false);
-  }
-}
+        setTimeout(async () => {
+          try {
+            const response = await fetch("/api/register", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email, nome, telefone, cpfCnpj, password, otp }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+              setOtpError(data.error || "Erro ao validar código");
+              setOtpSubmitting(false);
+              return;
+            }
+            setOtpSubmitting(false);
+            setOtpError(null);
+            setOtp("");
+            setStepOtp(false);
+            setOtpSuccess(true);
+
+            setTimeout(() => {
+              setOtpSuccess(false);
+              setStep("email");
+              setEmail(data.email || email);
+              setShowPasswordInput(true);
+              setStep("password");
+              setPassword("");
+            }, 3500);
+          } catch {
+            setOtpError("Erro ao conectar com o servidor");
+            setOtpSubmitting(false);
+          }
+        }, 3000);
+      }
     }
   }
 
   const handleBackToEmail = () => {
-  setStep("email");
-  setShowPasswordInput(false);
-  setStepOtp(false);
-  setOtp("");
-  setNome("");
-  setTelefone("");
-  setCpfCnpj("");
-  setPassword("");
-  setRegisterError(null);
-  setOtpError(null);
-  setEmailError(null);
-  setPasswordError(null);
-  setSubmitting(false);
-  setOtpSubmitting(false);
-};
-
+    setStep("email");
+    setShowPasswordInput(false);
+    setStepOtp(false);
+    setOtp("");
+    setNome("");
+    setTelefone("");
+    setCpfCnpj("");
+    setPassword("");
+    setRegisterError(null);
+    setOtpError(null);
+    setEmailError(null);
+    setPasswordError(null);
+    setSubmitting(false);
+    setOtpSubmitting(false);
+  };
 
   return (
     <div className={cn("flex flex-col gap-8 text-foreground bg-background", className)} {...props}>
+
+      {otpSuccess && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background backdrop-blur-md text-center animate-fade-in px-6">
+          <div className="flex flex-col items-center space-y-4 sm:space-y-6">
+            <img
+              src="./Design sem nome (9).svg"
+              alt="Sucesso"
+              className="w-60 h-60 sm:w-72 sm:h-72 md:w-80 md:h-80 drop-shadow-[0_0_25px_#26FF5950] transition-transform duration-500 ease-out scale-100"
+            />
+            <h2 className="text-3xl sm:text-4xl font-bold text-[#26FF59] tracking-tight drop-shadow-[0_0_10px_#26FF5930]">
+              Código validado com sucesso!
+            </h2>
+            <p className="opacity-70 text-base sm:text-lg max-w-lg leading-relaxed text-foreground/80">
+              Seu código de validação foi confirmado com êxito.<br />
+              Você será redirecionado ao login, aguarde...
+            </p>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleNext} autoComplete="on">
         <FieldGroup>
-          {/* Logo e título */}
           <div className="flex flex-col items-center gap-4 text-center">
             <a href="/login" className="flex flex-col items-center gap-3 font-medium text-foreground">
               <img
@@ -242,13 +253,34 @@ else if (stepOtp && otp.length === 6) {
                 alt="Logo Wyze Bank"
               />
             </a>
-            <h1 className="text-[27px] font-bold text-foreground">Welcome to Wyze Bank.</h1>
-            <FieldDescription className="text-[15px] text-muted-foreground">
-              Having trouble logging in? <a href="#">Support</a>
-            </FieldDescription>
+
+            <h1 className="text-[27px] font-bold text-foreground">
+              Boas-vindas ao Wyze Bank!
+            </h1>
+
+            {step === "email" && (
+              <FieldDescription className="text-[15px] mb-5">
+                Problemas no login?{" "}
+                <a
+                  href="https://support.wyzebank.com/docs/login-help/problems-accessing-my-account"
+                  className="inline-flex items-center text-primary opacity-70 hover:opacity-100 transition-all"
+                >
+                  Obtenha ajuda
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="ml-1 h-[0.9em] w-[0.9em]"
+                  >
+                    <path d="M14.3349 13.3301V6.60645L5.47065 15.4707C5.21095 15.7304 4.78895 15.7304 4.52925 15.4707C4.26955 15.211 4.26955 14.789 4.52925 14.5293L13.3935 5.66504H6.66011C6.29284 5.66504 5.99507 5.36727 5.99507 5C5.99507 4.63273 6.29284 4.33496 6.66011 4.33496H14.9999L15.1337 4.34863C15.4369 4.41057 15.665 4.67857 15.665 5V13.3301C15.6649 13.6973 15.3672 13.9951 14.9999 13.9951C14.6327 13.9951 14.335 13.6973 14.3349 13.3301Z" />
+                  </svg>
+                </a>
+              </FieldDescription>
+            )}
           </div>
 
-          {/* INPUT EMAIL */}
           <div className="relative flex flex-col">
             <div className="relative">
               {step !== "email" && (
@@ -287,7 +319,6 @@ else if (stepOtp && otp.length === 6) {
               )}
             </div>
 
-            {/* Mensagem de erro email */}
             {emailError && (
               <div className="flex items-center gap-1 mt-1 text-sm text-red-500">
                 <AlertCircle size={16} />
@@ -295,116 +326,103 @@ else if (stepOtp && otp.length === 6) {
               </div>
             )}
 
-            {/* CAMPOS REGISTRO */}
-{step === "register" && !stepOtp && (
-  <div className="flex flex-col transition-all duration-500 mt-4">
-    <Input
-      type="text"
-      placeholder="Nome completo"
-      value={nome}
-      onChange={(e) => setNome(e.target.value)}
-      disabled={submitting} // <-- bloqueia enquanto envia
-      className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-md rounded-t-md rounded-b-none transition-all duration-300"
-      style={{ fontFamily: "inherit" }}
-    />
-{/* Número de telefone com máscara */}
-{/* Telefone com máscara internacional +55 */}
-{/* Telefone com máscara dinâmica */}
-<Input
-  type="text"
-  placeholder="Número de telefone"
-  value={telefone}
-  onFocus={() => {
-    if (!telefone.startsWith("+55")) {
-      setTelefone("+55 ");
-    }
-  }}
-  onChange={(e) => {
-    let val = e.target.value.replace(/\D/g, "");
-    // +CC (2) + DDD (2) + número (9) = 13 dígitos
-    if (val.length > 13) val = val.slice(0, 13);
+            {step === "register" && !stepOtp && (
+              <div className="flex flex-col transition-all duration-500 mt-4">
+                <Input
+                  type="text"
+                  placeholder="Nome completo"
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  disabled={submitting}
+                  className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-md rounded-t-md rounded-b-none transition-all duration-300"
+                  style={{ fontFamily: "inherit" }}
+                />
 
-    let formatted = "";
-    if (val.length > 0) formatted = "+" + val.slice(0, 2);        // CC
-    if (val.length >= 3) formatted += " " + val.slice(2, 4);       // DDD
-    if (val.length >= 5) formatted += " " + val.slice(4, 9);       // primeira parte (5)
-    if (val.length >= 10) formatted += "-" + val.slice(9, 13);     // segunda parte (4)
+                <Input
+                  type="text"
+                  placeholder="Número de telefone"
+                  value={telefone}
+                  onFocus={() => {
+                    if (!telefone.startsWith("+55")) {
+                      setTelefone("+55 ");
+                    }
+                  }}
+                  onChange={(e) => {
+                    let val = e.target.value.replace(/\D/g, "");
+                    if (val.length > 13) val = val.slice(0, 13);
 
-    setTelefone(formatted);
-  }}
-  onBlur={() => {
-    const digits = telefone.replace(/\D/g, "");
-    if (digits.length !== 13) {
-      // você pode setar um erro de UI aqui
-    }
-  }}
-  onKeyDown={(e) => {
-    if (!/[0-9]/.test(e.key) && e.key !== "Backspace" && e.key !== "Delete") {
-      e.preventDefault();
-    }
-  }}
-  disabled={submitting}
-  maxLength={17} // "+55 11 99999-9999" tem 17
-  className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-0 rounded-none transition-all duration-300"
-  style={{ fontFamily: "inherit" }}
-/>
+                    let formatted = "";
+                    if (val.length > 0) formatted = "+" + val.slice(0, 2);
+                    if (val.length >= 3) formatted += " " + val.slice(2, 4);
+                    if (val.length >= 5) formatted += " " + val.slice(4, 9);
+                    if (val.length >= 10) formatted += "-" + val.slice(9, 13);
 
+                    setTelefone(formatted);
+                  }}
+                  onBlur={() => {
+                    const digits = telefone.replace(/\D/g, "");
+                    if (digits.length !== 13) {
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (!/[0-9]/.test(e.key) && e.key !== "Backspace" && e.key !== "Delete") {
+                      e.preventDefault();
+                    }
+                  }}
+                  disabled={submitting}
+                  maxLength={17}
+                  className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-0 rounded-none transition-all duration-300"
+                  style={{ fontFamily: "inherit" }}
+                />
 
+                <Input
+                  type="text"
+                  placeholder="Cpf ou Cnpj"
+                  value={cpfCnpj}
+                  onChange={(e) => {
+                    let val = e.target.value.replace(/\D/g, "");
 
+                    if (val.length <= 11) {
+                      val = val.slice(0, 11);
+                      let formatted = val;
+                      if (val.length > 3) formatted = val.slice(0, 3) + "." + val.slice(3);
+                      if (val.length > 6) formatted = formatted.slice(0, 7) + "." + formatted.slice(7);
+                      if (val.length > 9) formatted = formatted.slice(0, 11) + "-" + formatted.slice(11);
+                      setCpfCnpj(formatted);
+                    } else {
+                      val = val.slice(0, 14);
+                      let formatted = val;
+                      if (val.length > 2) formatted = val.slice(0, 2) + "." + val.slice(2);
+                      if (val.length > 5) formatted = formatted.slice(0, 6) + "." + formatted.slice(6);
+                      if (val.length > 8) formatted = formatted.slice(0, 10) + "/" + formatted.slice(10);
+                      if (val.length > 12) formatted = formatted.slice(0, 15) + "-" + formatted.slice(15);
+                      setCpfCnpj(formatted);
+                    }
+                  }}
+                  disabled={submitting}
+                  maxLength={18}
+                  className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-0 rounded-none transition-all duration-300"
+                  style={{ fontFamily: "inherit" }}
+                />
 
-<Input
-  type="text"
-  placeholder="Cpf ou Cnpj"
-  value={cpfCnpj}
-  onChange={(e) => {
-    let val = e.target.value.replace(/\D/g, ""); // só números
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Crie uma senha"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={submitting}
+                  className="bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t border-[#151515] rounded-b-md rounded-t-none transition-all duration-300"
+                  style={{ fontFamily: "inherit" }}
+                />
+                {registerError && (
+                  <div className="flex items-center gap-1 mt-1 text-sm text-red-500">
+                    <AlertCircle size={16} />
+                    <span>{registerError}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
-    if (val.length <= 11) {
-      // CPF: 000.000.000-00
-      val = val.slice(0, 11);
-      let formatted = val;
-      if (val.length > 3) formatted = val.slice(0, 3) + "." + val.slice(3);
-      if (val.length > 6) formatted = formatted.slice(0, 7) + "." + formatted.slice(7);
-      if (val.length > 9) formatted = formatted.slice(0, 11) + "-" + formatted.slice(11);
-      setCpfCnpj(formatted);
-    } else {
-      // CNPJ: 00.000.000/0001-00
-      val = val.slice(0, 14);
-      let formatted = val;
-      if (val.length > 2) formatted = val.slice(0, 2) + "." + val.slice(2);
-      if (val.length > 5) formatted = formatted.slice(0, 6) + "." + formatted.slice(6);
-      if (val.length > 8) formatted = formatted.slice(0, 10) + "/" + formatted.slice(10);
-      if (val.length > 12) formatted = formatted.slice(0, 15) + "-" + formatted.slice(15);
-      setCpfCnpj(formatted);
-    }
-  }}
-  disabled={submitting}
-  maxLength={18}
-  className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-0 rounded-none transition-all duration-300"
-  style={{ fontFamily: "inherit" }}
-/>
-
-
-{/* Senha */}
-<Input
-  type={showPassword ? "text" : "password"}
-  placeholder="Crie uma senha"
-  value={password}
-  onChange={(e) => setPassword(e.target.value)}
-  disabled={submitting}
-  className="bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t border-[#151515] rounded-b-md rounded-t-none transition-all duration-300"
-  style={{ fontFamily: "inherit" }}
-/>
-    {registerError && (
-      <div className="flex items-center gap-1 mt-1 text-sm text-red-500">
-        <AlertCircle size={16} />
-        <span>{registerError}</span>
-      </div>
-    )}
-  </div>
-)}
-
-            {/* OTP */}
             {stepOtp && (
               <div className="flex flex-col gap-4 mt-4 items-center w-full">
                 <Field>
@@ -439,7 +457,7 @@ else if (stepOtp && otp.length === 6) {
                   )}
 
                   <FieldDescription className="text-center mt-1">
-                    Didn't receive the code?{" "}
+                    O código não foi recebido?{" "}
                     <button
                       type="button"
                       onClick={async () => {
@@ -459,62 +477,61 @@ else if (stepOtp && otp.length === 6) {
                           setResending(false)
                         }
                       }}
-                      className="text-muted-foreground underline"
+                      className="text-muted-foreground underline cursor-pointer hover:text-foreground transition-all"
                     >
-                      {resending ? "Sending..." : "Resend"}
+                      {resending ? "enviando..." : "Reenviar Código"}
                     </button>
                   </FieldDescription>
                 </Field>
               </div>
             )}
 
-           {/* PASSWORD LOGIN */}
-{step === "password" && (
-  <div
-    className={cn(
-      "relative overflow-hidden transition-all duration-500",
-      showPasswordInput
-        ? "max-h-[120px] opacity-100 translate-y-0"
-        : "max-h-0 opacity-0 -translate-y-6"
-    )}
-  >
-    <div className="relative flex flex-col gap-1">
-      <Input
-        id="password"
-        name="password"
-        type={showPassword ? "text" : "password"}
-        placeholder="your password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        className={cn(
-          "bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 pr-12 rounded-b-md rounded-t-none transition-all duration-500 transform",
-          passwordError ? "border-red-500" : "border-[#151515]",
-          showPasswordInput ? "translate-y-0 opacity-100" : "-translate-y-6 opacity-0"
-        )}
-        style={{ fontFamily: "inherit" }}
-      />
-      <button
-        type="button"
-        onClick={() => setShowPassword(!showPassword)}
-        className="absolute right-4 top-6 -translate-y-1/2 text-muted-foreground hover:text-foreground opacity-50"
-      >
-        {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-      </button>
+            {step === "password" && (
+              <div
+                className={cn(
+                  "relative overflow-hidden transition-all duration-500",
+                  showPasswordInput
+                    ? "max-h-[120px] opacity-100 translate-y-0"
+                    : "max-h-0 opacity-0 -translate-y-6"
+                )}
+              >
+                <div className="relative flex flex-col gap-1">
+                  <Input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={cn(
+                      "bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 pr-12 rounded-b-md rounded-t-none transition-all duration-500 transform",
+                      passwordError ? "border-red-500" : "border-[#151515]",
+                      showPasswordInput ? "translate-y-0 opacity-100" : "-translate-y-6 opacity-0"
+                    )}
+                    style={{ fontFamily: "inherit" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-6 -translate-y-1/2 text-muted-foreground hover:text-foreground opacity-50"
+                  >
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
 
-      {passwordError && (
-        <div
-          className={cn(
-            "flex items-center gap-1 mt-1 text-sm text-red-500 transition-all duration-500 transform",
-            showPasswordInput ? "translate-y-0 opacity-100" : "-translate-y-3 opacity-0"
-          )}
-        >
-          <AlertCircle size={16} />
-          <span>{passwordError.message}</span>
-        </div>
-      )}
-    </div>
-  </div>
-)}
+                  {passwordError && (
+                    <div
+                      className={cn(
+                        "flex items-center gap-1 mt-1 text-sm text-red-500 transition-all duration-500 transform",
+                        showPasswordInput ? "translate-y-0 opacity-100" : "-translate-y-3 opacity-0"
+                      )}
+                    >
+                      <AlertCircle size={16} />
+                      <span>{passwordError.message}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <Field>
@@ -537,9 +554,15 @@ else if (stepOtp && otp.length === 6) {
         </FieldGroup>
       </form>
 
-      <FieldDescription className="px-6 text-center text-muted-foreground text-[12px]">
-        All rights reserved © 2025 WyzeCode®. By logging in, you agree to our{" "}
-        <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.
+      <FieldDescription className="px-6 text-center text-[12px] opacity-50">
+        Todos os direitos reservados © 2025 WyzeCode®. Ao fazer login, você concorda com nossos{" "}
+        <a href="https://support.wyzecode.com/docs/terms-service" target="_blank" rel="noopener noreferrer">
+          Termos de Serviço
+        </a>{" "}
+        e{" "}
+        <a href="https://support.wyzecode.com/docs/policy-politic" target="_blank" rel="noopener noreferrer">
+          Política de Privacidade
+        </a>.
       </FieldDescription>
     </div>
   )

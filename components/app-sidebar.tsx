@@ -34,7 +34,7 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
 }
 
 export function AppSidebar({ userName, userEmail, ...props }: AppSidebarProps) {
-  const [activeItem, setActiveItem] = React.useState("Dashboard")
+  const [activeItem, setActiveItem] = React.useState("Painel de Controle")
 
   // Passa o nome completo
   const data = {
@@ -52,80 +52,81 @@ export function AppSidebar({ userName, userEmail, ...props }: AppSidebarProps) {
       }
     ],
     navMain: [
-      {
-        title: "Dashboard",
-        url: "#",
-        icon: PieChart,
-        items: [
-          { title: "Overview", url: "#" },
-          { title: "Recent Activities", url: "#" },
-          { title: "Notifications", url: "#" },
-        ],
-      },
-      {
-        title: "Accounts & Wallets",
-        url: "#",
-        icon: CreditCard,
-        items: [
-          { title: "My Account", url: "#" },
-          { title: "Add Account", url: "#" },
-          { title: "Cards", url: "#" },
-          { title: "Transaction History", url: "#" },
-        ],
-      },
-      {
-        title: "Payments & Receipts",
-        url: "#",
-        icon: ShoppingCart,
-        items: [
-          { title: "Send Money", url: "#" },
-          { title: "Receive Payments", url: "#" },
-          { title: "Invoices", url: "#" },
-          { title: "Scheduled Payments", url: "#" },
-        ],
-      },
-      {
-        title: "Integrations / Gateway",
-        url: "#",
-        icon: Bot,
-        items: [
-          { title: "API Keys", url: "#" },
-          { title: "Webhooks", url: "#" },
-          { title: "Online Payments", url: "#" },
-          { title: "Payment Reports", url: "#" },
-        ],
-      },
-      {
-        title: "Reports & Analytics",
-        url: "#",
-        icon: Map,
-        items: [
-          { title: "Transactions", url: "#" },
-          { title: "Financial Reports", url: "#" },
-          { title: "Charts & KPIs", url: "#" },
-        ],
-      },
-      {
-        title: "Security & Settings",
-        url: "#",
-        icon: Settings2,
-        items: [
-          { title: "Account Settings", url: "#" },
-          { title: "Authentication", url: "#" },
-          { title: "Permissions", url: "#" },
-          { title: "Payment Limits", url: "#" },
-        ],
-      },
-      {
-        title: "Support & Documentation",
-        url: "#",
-        icon: BookOpen,
-        items: [
-          { title: "Help", url: "#" },
-          { title: "API Docs", url: "#" },
-          { title: "System Status", url: "#" },
-        ],
-      }
+    {
+  title: "Painel de Controle",
+  url: "#",
+  icon: PieChart,
+  items: [
+    { title: "Visão Geral", url: "#" },
+    { title: "Atividades Recentes", url: "#" },
+    { title: "Notificações", url: "#" },
+  ],
+},
+{
+  title: "Contas e Carteiras",
+  url: "#",
+  icon: CreditCard,
+  items: [
+    { title: "Minha Conta", url: "#" },
+    { title: "Adicionar Conta", url: "#" },
+    { title: "Cartões", url: "#" },
+    { title: "Histórico de Transações", url: "#" },
+  ],
+},
+{
+  title: "Pagamentos e Recebimentos",
+  url: "#",
+  icon: ShoppingCart,
+  items: [
+    { title: "Enviar Dinheiro", url: "#" },
+    { title: "Receber Pagamentos", url: "#" },
+    { title: "Faturas", url: "#" },
+    { title: "Pagamentos Agendados", url: "#" },
+  ],
+},
+{
+  title: "Integrações / Gateway",
+  url: "#",
+  icon: Bot,
+  items: [
+    { title: "Chaves de API", url: "#" },
+    { title: "Webhooks", url: "#" },
+    { title: "Pagamentos Online", url: "#" },
+    { title: "Relatórios de Pagamento", url: "#" },
+  ],
+},
+{
+  title: "Relatórios e Análises",
+  url: "#",
+  icon: Map,
+  items: [
+    { title: "Transações", url: "#" },
+    { title: "Relatórios Financeiros", url: "#" },
+    { title: "Gráficos e Indicadores", url: "#" },
+  ],
+},
+{
+  title: "Segurança e Configurações",
+  url: "#",
+  icon: Settings2,
+  items: [
+    { title: "Configurações da Conta", url: "#" },
+    { title: "Autenticação", url: "#" },
+    { title: "Permissões", url: "#" },
+    { title: "Limites de Pagamento", url: "#" },
+  ],
+},
+{
+  title: "Suporte e Documentação",
+  url: "#",
+  icon: BookOpen,
+  items: [
+    { title: "Ajuda", url: "#" },
+    { title: "Documentação da API", url: "#" },
+    { title: "Status do Sistema", url: "#" },
+  ],
+}
+
     ],
     projects: [
       { name: "My Invoices", url: "#", icon: CreditCard },

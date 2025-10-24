@@ -1,4 +1,3 @@
-// emailValidation.ts
 export function validateEmail(email: string): { valid: boolean; message?: string } {
   if (!email || email.trim() === "") {
     return { valid: false, message: "O campo de email não pode estar vazio." }
@@ -29,7 +28,6 @@ export function validateEmail(email: string): { valid: boolean; message?: string
   return { valid: true }
 }
 
-// Nova função de validação de senha
 export function validatePassword(password: string): { valid: boolean; message?: string } {
   if (!password || password.trim() === "") {
     return { valid: false, message: "O campo de senha não pode estar vazio." }
