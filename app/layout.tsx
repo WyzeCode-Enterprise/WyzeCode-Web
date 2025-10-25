@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import Script from "next/script"; // <--- ADICIONADO
+import Script from "next/script";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -15,7 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Wyze Bank • O Melhor Banco Digital e Plataforma de Pagamentos Inteligentes",
+  title:
+    "Wyze Bank • O Melhor Banco Digital e Plataforma de Pagamentos Inteligentes",
   description:
     "Wyze Bank é um banco digital completo com soluções de pagamentos integradas, tecnologia avançada e segurança máxima para empresas e clientes gerenciarem suas finanças com eficiência.",
   icons: {
@@ -36,18 +37,19 @@ export default function RootLayout({
           type="image/png"
           href="https://www.wyzebank.com/lg_files_wb/svg_files/icon_green_black.svg"
         />
+      </head>
 
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      >
+        {/* Adsense script oficial do Google */}
         <Script
           id="adsense-script"
           async
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9885448378379221"
           crossOrigin="anonymous"
         />
-      </head>
 
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
         {children}
         <SpeedInsights />
       </body>

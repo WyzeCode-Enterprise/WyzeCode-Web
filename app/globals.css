@@ -3,7 +3,6 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Set dark mode as default */
 :root {
   --radius: 0.825rem;
   --background: oklch(0% 0 0);
@@ -39,7 +38,6 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
-/* Light mode as optional variant */
 .light {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -72,6 +70,17 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --sidebar: hsl(240 5.9% 10%);
+  --sidebar-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-primary: hsl(224.3 76.3% 48%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(240 3.7% 15.9%);
+  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-border: hsl(240 3.7% 15.9%);
+  --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
 
 @theme inline {
@@ -118,6 +127,7 @@
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
   }
@@ -128,6 +138,7 @@
     opacity: 0;
     transform: translateY(-4px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -142,6 +153,7 @@
   0% {
     transform: translateX(0);
   }
+
   100% {
     transform: translateX(-50%);
   }
@@ -172,7 +184,6 @@ select:-webkit-autofill:focus {
   transition: background-color 9999s ease-in-out 0s, color 9999s ease-in-out 0s;
 }
 
-/* Green accent color utilities */
 .cback {
   background-color: #26ff59;
 }
@@ -181,7 +192,6 @@ select:-webkit-autofill:focus {
   color: #26ff59;
 }
 
-/* Enhanced minimalist utilities */
 .hero-gradient {
   background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15), transparent);
 }
@@ -194,7 +204,6 @@ select:-webkit-autofill:focus {
   box-shadow: 0 0 80px rgba(38, 255, 89, 0.25);
 }
 
-/* Added more background glow utilities for pure black backgrounds */
 .glow-subtle-green {
   box-shadow: 0 0 120px rgba(38, 255, 89, 0.15);
 }
@@ -203,7 +212,6 @@ select:-webkit-autofill:focus {
   box-shadow: 0 0 120px rgba(59, 130, 246, 0.15);
 }
 
-/* Smooth scroll behavior */
 html {
   scroll-behavior: smooth;
   scroll-padding-top: 80px;
@@ -215,7 +223,6 @@ html {
   }
 }
 
-/* Custom scrollbar for better aesthetics */
 ::-webkit-scrollbar {
   width: 4px;
 }
@@ -233,22 +240,12 @@ html {
   background: #1ed645;
 }
 
-.dark {
-  --sidebar: hsl(240 5.9% 10%);
-  --sidebar-foreground: hsl(240 4.8% 95.9%);
-  --sidebar-primary: hsl(224.3 76.3% 48%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(240 3.7% 15.9%);
-  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-  --sidebar-border: hsl(240 3.7% 15.9%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
-}
-
 @keyframes fade-in {
   from {
     opacity: 0;
     transform: scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
