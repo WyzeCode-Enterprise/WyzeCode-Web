@@ -5,6 +5,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 export default function Page() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-gray-100 select-none relative">
+      <meta name="google-adsense-account" content="ca-pub-9885448378379221"></meta>
       <Script
         id="adsense-script-403"
         async

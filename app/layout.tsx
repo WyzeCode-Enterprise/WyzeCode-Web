@@ -32,6 +32,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <meta name="google-adsense-account" content="ca-pub-9885448378379221"></meta>
         <link
           rel="icon"
           type="image/png"
@@ -42,7 +43,6 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* Adsense script oficial do Google */}
         <Script
           id="adsense-script"
           async
