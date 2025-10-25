@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { FieldLabel } from "@/components/ui/field"
 import { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator } from "@/components/ui/input-otp"
 import { validateEmail, validatePassword } from "@/app/api/emailValidation"
+import { CheckCircle2 } from "lucide-react"
 
 export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
   const [step, setStep] = useState<"login" | "email" | "password" | "register">("email")
@@ -35,6 +36,29 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
   const [telefone, setTelefone] = useState("")
   const [cpfCnpj, setCpfCnpj] = useState("")
   const [registerError, setRegisterError] = useState<string | null>(null)
+
+  // fluxo de recuperação de senha
+  const [forgotStep, setForgotStep] = useState<"idle" | "request" | "otp" | "reset">("idle")
+  const [forgotEmail, setForgotEmail] = useState("")
+  const [forgotError, setForgotError] = useState<string | null>(null)
+  const [forgotLoading, setForgotLoading] = useState(false)
+
+  // otp da recuperação
+  const [forgotOtp, setForgotOtp] = useState("")
+  const [forgotOtpError, setForgotOtpError] = useState<string | null>(null)
+  const [forgotOtpSubmitting, setForgotOtpSubmitting] = useState(false)
+  const [forgotResending, setForgotResending] = useState(false)
+
+  const [showNewPass, setShowNewPass] = useState(false)
+  const [showNewPassConfirm, setShowNewPassConfirm] = useState(false)
+
+  // nova senha (reset)
+  const [newPass, setNewPass] = useState("")
+  const [newPassConfirm, setNewPassConfirm] = useState("")
+  const [newPassError, setNewPassError] = useState<string | null>(null)
+
+  // controle de sucesso visual (reuso da mesma tela verde)
+  const [successMode, setSuccessMode] = useState<"register" | "reset" | null>(null)
 
   useEffect(() => {
     const savedStep = sessionStorage.getItem("savedStep")
@@ -72,100 +96,240 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
 
 
   const handleNext = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
 
-    if (step === "email") {
-      const { valid, message } = validateEmail(email)
-      if (!valid) {
-        setEmailError({ message: message || "Email inválido" })
-        setShowEmailError(true)
-        return
+    //
+    // 1. FLUXO "ESQUECI MINHA SENHA"
+    //
+    if (forgotStep !== "idle") {
+      // STEP 1: pedir email
+      if (forgotStep === "request") {
+        const { valid, message } = validateEmail(forgotEmail);
+        if (!valid) {
+          setForgotError(message || "Email inválido");
+          return;
+        }
+        setForgotError(null);
+        setForgotLoading(true);
+
+        try {
+          const resp = await fetch("/api/forgot-pass", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: forgotEmail }),
+          });
+
+          const data = await resp.json();
+          setForgotLoading(false);
+
+          if (!resp.ok) {
+            setForgotError(data.error || "Erro ao enviar código.");
+            return;
+          }
+
+          // foi enviado o OTP pro email
+          setForgotStep("otp");
+        } catch {
+          setForgotLoading(false);
+          setForgotError("Erro ao conectar com o servidor.");
+        }
+        return;
       }
-      setEmailError(null)
-      setShowEmailError(false)
-      setLoading(true)
+      // STEP 2: validar OTP
+      if (forgotStep === "otp") {
+        if (forgotOtp.length < 6) {
+          setForgotOtpError("Digite o código completo.");
+          return;
+        }
+
+        setForgotOtpError(null);
+        setForgotOtpSubmitting(true);
+
+        // segura 2s pra dar tempo de mostrar o loader
+        setTimeout(async () => {
+          try {
+            const resp = await fetch("/api/forgot-pass", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: forgotEmail, otp: forgotOtp }),
+            });
+
+            const data = await resp.json();
+            setForgotOtpSubmitting(false);
+
+            if (!resp.ok) {
+              setForgotOtpError(data.error || "Código inválido");
+              return;
+            }
+
+            // OTP validado → agora pede nova senha
+            setForgotStep("reset");
+          } catch {
+            setForgotOtpSubmitting(false);
+            setForgotOtpError("Erro ao conectar com o servidor.");
+          }
+        }, 2000);
+
+        return;
+      }
+
+      // STEP 3: enviar nova senha
+      if (forgotStep === "reset") {
+        if (!newPass || !newPassConfirm) {
+          setNewPassError("Preencha os dois campos de senha.");
+          return;
+        }
+        if (newPass !== newPassConfirm) {
+          setNewPassError("As senhas não conferem.");
+          return;
+        }
+        const { valid } = validatePassword(newPass);
+        if (!valid) {
+          setNewPassError("Senha fraca. Use maiúscula, minúscula, número e símbolo (mín. 8).");
+          return;
+        }
+
+        setNewPassError(null);
+        setSubmitting(true);
+
+        try {
+          const resp = await fetch("/api/forgot-pass", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: forgotEmail,
+              otp: forgotOtp,
+              password: newPass,
+            }),
+          });
+
+          const data = await resp.json();
+          setSubmitting(false);
+
+          if (!resp.ok) {
+            setNewPassError(data.error || "Erro ao redefinir senha.");
+            return;
+          }
+
+          // sucesso total -> mostrar overlay verde
+          setSuccessMode("reset");
+          setOtpSuccess(true);
+
+          // depois do "sucesso", volta pro login com email já preenchido
+          setTimeout(() => {
+            setOtpSuccess(false);
+            setForgotStep("idle");
+            setStep("password");
+            setEmail(forgotEmail); // já deixa o email que resetou
+            setShowPasswordInput(true);
+            setPassword(""); // usuário vai digitar a senha nova agora
+          }, 3500);
+
+        } catch {
+          setSubmitting(false);
+          setNewPassError("Erro ao conectar com o servidor.");
+        }
+
+        return;
+      }
+    }
+
+    //
+    // 2. FLUXO NORMAL (LOGIN / REGISTER)
+    //
+    if (step === "email") {
+      const { valid, message } = validateEmail(email);
+      if (!valid) {
+        setEmailError({ message: message || "Email inválido" });
+        setShowEmailError(true);
+        return;
+      }
+      setEmailError(null);
+      setShowEmailError(false);
+      setLoading(true);
 
       try {
         const response = await fetch("/api/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email }),
-        })
-        const data = await response.json()
-        setLoading(false)
+        });
+        const data = await response.json();
+        setLoading(false);
 
         if (data?.newUser) {
-          setStep("register")
-          return
+          setStep("register");
+          return;
         }
 
-        setStep("password")
-        setShowPasswordInput(true)
+        setStep("password");
+        setShowPasswordInput(true);
       } catch {
-        setLoading(false)
-        setEmailError({ message: "Erro ao conectar com o servidor" })
+        setLoading(false);
+        setEmailError({ message: "Erro ao conectar com o servidor" });
       }
     }
 
     else if (step === "password") {
-      const { valid, message } = validatePassword(password)
+      const { valid, message } = validatePassword(password);
       if (!valid) {
-        setPasswordError({ message: message || "Senha inválida" })
-        return
+        setPasswordError({ message: message || "Senha inválida" });
+        return;
       }
-      setPasswordError(null)
-      setSubmitting(true)
+      setPasswordError(null);
+      setSubmitting(true);
 
       try {
         const response = await fetch("/api/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
-        })
-        const data = await response.json()
+        });
+        const data = await response.json();
         if (!response.ok) {
-          setPasswordError({ message: data.error || "Erro ao logar" })
-          setSubmitting(false)
+          setPasswordError({ message: data.error || "Erro ao logar" });
+          setSubmitting(false);
         } else {
-          window.location.href = data.redirect
+          window.location.href = data.redirect;
         }
       } catch {
-        setPasswordError({ message: "Erro ao conectar com o servidor" })
-        setSubmitting(false)
+        setPasswordError({ message: "Erro ao conectar com o servidor" });
+        setSubmitting(false);
       }
     }
 
     else if (step === "register") {
       if (!stepOtp) {
         if (!nome || !telefone || !cpfCnpj || !password) {
-          setRegisterError("Preencha todos os campos.")
-          return
+          setRegisterError("Preencha todos os campos.");
+          return;
         }
-        setRegisterError(null)
-        setSubmitting(true)
+        setRegisterError(null);
+        setSubmitting(true);
 
         try {
           const response = await fetch("/api/register", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, nome, telefone, cpfCnpj, password }),
-          })
-          const data = await response.json()
-          setSubmitting(false)
+          });
+          const data = await response.json();
+          setSubmitting(false);
 
           if (!response.ok) {
-            setRegisterError(data.error || "Erro ao registrar")
+            setRegisterError(data.error || "Erro ao registrar");
           } else {
-            setStepOtp(true)
+            setStepOtp(true);
           }
         } catch {
-          setRegisterError("Erro ao conectar com o servidor")
-          setSubmitting(false)
+          setRegisterError("Erro ao conectar com o servidor");
+          setSubmitting(false);
         }
       }
       else if (stepOtp && otp.length === 6) {
         setOtpSubmitting(true);
         setOtpError(null);
+
         setTimeout(async () => {
           try {
             const response = await fetch("/api/register", {
@@ -181,10 +345,13 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
               setOtpSubmitting(false);
               return;
             }
+
             setOtpSubmitting(false);
             setOtpError(null);
             setOtp("");
             setStepOtp(false);
+
+            setSuccessMode("register");
             setOtpSuccess(true);
 
             setTimeout(() => {
@@ -202,11 +369,17 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         }, 3000);
       }
     }
-  }
+  };
+
 
   const handleBackToEmail = () => {
+    // volta pro login normal
+    setForgotStep("idle")
+
     setStep("email");
     setShowPasswordInput(false);
+
+    // reset fluxo normal
     setStepOtp(false);
     setOtp("");
     setNome("");
@@ -219,25 +392,52 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
     setPasswordError(null);
     setSubmitting(false);
     setOtpSubmitting(false);
+
+    // reset fluxo forgot
+    setForgotEmail("");
+    setForgotError(null);
+    setForgotLoading(false);
+    setForgotOtp("");
+    setForgotOtpError(null);
+    setForgotOtpSubmitting(false);
+    setForgotResending(false);
+    setNewPass("");
+    setNewPassConfirm("");
+    setNewPassError(null);
+    setSuccessMode(null);
   };
 
   return (
     <div className={cn("flex flex-col gap-8 text-foreground bg-background", className)} {...props}>
 
       {otpSuccess && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background backdrop-blur-md text-center animate-fade-in px-6">
+        <div className="fixed inset-0 z-60 flex flex-col items-center justify-center bg-background backdrop-blur-md text-center animate-fade-in px-6">
           <div className="flex flex-col items-center space-y-4 sm:space-y-6">
             <img
               src="./Design sem nome (9).svg"
               alt="Sucesso"
               className="w-60 h-60 sm:w-72 sm:h-72 md:w-80 md:h-80 drop-shadow-[0_0_25px_#26FF5950] transition-transform duration-500 ease-out scale-100"
             />
+
             <h2 className="text-3xl sm:text-4xl font-bold text-[#26FF59] tracking-tight drop-shadow-[0_0_10px_#26FF5930]">
-              Código validado com sucesso!
+              {successMode === "reset"
+                ? "Senha atualizada com sucesso!"
+                : "Código validado com sucesso!"}
             </h2>
+
             <p className="opacity-70 text-base sm:text-lg max-w-lg leading-relaxed text-foreground/80">
-              Seu código de validação foi confirmado com êxito.<br />
-              Você será redirecionado ao login, aguarde...
+              {successMode === "reset"
+                ? (
+                  <>
+                    Sua senha foi redefinida.<br />
+                    Estamos te levando de volta ao login...
+                  </>
+                ) : (
+                  <>
+                    Seu código de validação foi confirmado com êxito.<br />
+                    Você será redirecionado ao login, aguarde...
+                  </>
+                )}
             </p>
           </div>
         </div>
@@ -254,11 +454,20 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
               />
             </a>
 
-            <h1 className="text-[27px] font-bold text-foreground">
-              Boas-vindas ao Wyze Bank!
+            <h1 className="text-[27px] font-bold text-foreground text-center">
+              {forgotStep === "request"
+                ? "Insira o email para alterar a senha"
+                : forgotStep === "otp"
+                  ? "Informe o código recebido"
+                  : forgotStep === "reset"
+                    ? "Digite sua nova senha"
+                    : step === "register"
+                      ? "Crie sua conta agora mesmo"
+                      : "Boas-vindas ao Wyze Bank!"}
             </h1>
 
-            {step === "email" && (
+            {/* Só mostra essa ajuda quando é fluxo de login normal (sem forgot e ainda no e-mail de login) */}
+            {forgotStep === "idle" && step === "email" && (
               <FieldDescription className="text-[15px] mb-5">
                 Problemas no login?{" "}
                 <a
@@ -281,159 +490,72 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
             )}
           </div>
 
-          <div className="relative flex flex-col">
-            <div className="relative">
-              {step !== "email" && (
-                <button
-                  type="button"
-                  onClick={handleBackToEmail}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
-                >
-                  <ArrowLeft size={20} />
-                </button>
-              )}
-              <Input
-                id="email"
-                name="username"
-                type="text"
-                placeholder="Enter your email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={loading || step !== "email"}
-                autoComplete="off"
-                onFocus={() => setShowEmailError(false)}
-                onBlur={() => emailError && setShowEmailError(true)}
-                className={cn(
-                  "bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 pr-12 duration-300 rounded-t-md transition-all",
-                  emailError ? "border-red-500" : "border-[#151515]",
-                  loading ? "opacity-100" : "",
-                  step === "password" ? "rounded-b-none" : "rounded-b-md"
-                )}
-                style={{ fontFamily: "inherit" }}
-              />
-              {loading && (
-                <Loader2
-                  className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground"
-                  size={20}
-                />
-              )}
-            </div>
+    <div className="relative flex flex-col">
 
-            {emailError && (
-              <div className="flex items-center gap-1 mt-1 text-sm text-red-500">
-                <AlertCircle size={16} />
-                <span>{emailError.message}</span>
-              </div>
-            )}
+  {/* BOTÃO VOLTAR:
+     - aparece se (fluxo normal e não está em "email")
+     - ou se está no fluxo forgotStep === "request"
+     - agora com z-50 e pointer-events-auto pra garantir clique
+  */}
+  {(
+    (forgotStep === "idle" && step !== "email") ||
+    (forgotStep === "request")
+  ) && (
+    <button
+      type="button"
+      onClick={handleBackToEmail}
+      className={cn(
+        "absolute right-4 text-muted-foreground hover:text-foreground cursor-pointer opacity-50",
+        // garante que fica clicável acima do input
+        "z-50 pointer-events-auto transition"
+      )}
+      style={{
+        top: "1.75rem",
+        transform: "translateY(-50%)",
+      }}
+    >
+      <ArrowLeft size={20} />
+    </button>
+  )}
 
-            {step === "register" && !stepOtp && (
-              <div className="flex flex-col transition-all duration-500 mt-4">
-                <Input
-                  type="text"
-                  placeholder="Nome completo"
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  disabled={submitting}
-                  className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-md rounded-t-md rounded-b-none transition-all duration-300"
-                  style={{ fontFamily: "inherit" }}
-                />
+  {/* =============== FLUXO ESQUECI SENHA =============== */}
+  {forgotStep === "request" && (
+    <>
+      <Input
+        id="forgot-email"
+        type="text"
+        placeholder="Digite seu email para recuperar a senha"
+        value={forgotEmail}
+        onChange={(e) => setForgotEmail(e.target.value)}
+        disabled={forgotLoading}
+        className={cn(
+          "bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 pr-12 duration-300 rounded-md border",
+          forgotError ? "border-red-500" : "border-[#151515]"
+        )}
+        style={{ fontFamily: "inherit" }}
+      />
 
-                <Input
-                  type="text"
-                  placeholder="Número de telefone"
-                  value={telefone}
-                  onFocus={() => {
-                    if (!telefone.startsWith("+55")) {
-                      setTelefone("+55 ");
-                    }
-                  }}
-                  onChange={(e) => {
-                    let val = e.target.value.replace(/\D/g, "");
-                    if (val.length > 13) val = val.slice(0, 13);
+      {forgotError && (
+        <div className="flex items-center gap-1 mt-1 text-sm text-red-500">
+          <AlertCircle size={16} />
+          <span>{forgotError}</span>
+        </div>
+      )}
+    </>
+  )}
 
-                    let formatted = "";
-                    if (val.length > 0) formatted = "+" + val.slice(0, 2);
-                    if (val.length >= 3) formatted += " " + val.slice(2, 4);
-                    if (val.length >= 5) formatted += " " + val.slice(4, 9);
-                    if (val.length >= 10) formatted += "-" + val.slice(9, 13);
-
-                    setTelefone(formatted);
-                  }}
-                  onBlur={() => {
-                    const digits = telefone.replace(/\D/g, "");
-                    if (digits.length !== 13) {
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (!/[0-9]/.test(e.key) && e.key !== "Backspace" && e.key !== "Delete") {
-                      e.preventDefault();
-                    }
-                  }}
-                  disabled={submitting}
-                  maxLength={17}
-                  className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-0 rounded-none transition-all duration-300"
-                  style={{ fontFamily: "inherit" }}
-                />
-
-                <Input
-                  type="text"
-                  placeholder="Cpf ou Cnpj"
-                  value={cpfCnpj}
-                  onChange={(e) => {
-                    let val = e.target.value.replace(/\D/g, "");
-
-                    if (val.length <= 11) {
-                      val = val.slice(0, 11);
-                      let formatted = val;
-                      if (val.length > 3) formatted = val.slice(0, 3) + "." + val.slice(3);
-                      if (val.length > 6) formatted = formatted.slice(0, 7) + "." + formatted.slice(7);
-                      if (val.length > 9) formatted = formatted.slice(0, 11) + "-" + formatted.slice(11);
-                      setCpfCnpj(formatted);
-                    } else {
-                      val = val.slice(0, 14);
-                      let formatted = val;
-                      if (val.length > 2) formatted = val.slice(0, 2) + "." + val.slice(2);
-                      if (val.length > 5) formatted = formatted.slice(0, 6) + "." + formatted.slice(6);
-                      if (val.length > 8) formatted = formatted.slice(0, 10) + "/" + formatted.slice(10);
-                      if (val.length > 12) formatted = formatted.slice(0, 15) + "-" + formatted.slice(15);
-                      setCpfCnpj(formatted);
-                    }
-                  }}
-                  disabled={submitting}
-                  maxLength={18}
-                  className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-0 rounded-none transition-all duration-300"
-                  style={{ fontFamily: "inherit" }}
-                />
-
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Crie uma senha"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={submitting}
-                  className="bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t border-[#151515] rounded-b-md rounded-t-none transition-all duration-300"
-                  style={{ fontFamily: "inherit" }}
-                />
-                {registerError && (
-                  <div className="flex items-center gap-1 mt-1 text-sm text-red-500">
-                    <AlertCircle size={16} />
-                    <span>{registerError}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {stepOtp && (
-              <div className="flex flex-col gap-4 mt-4 items-center w-full">
+            {forgotStep === "otp" && (
+              <div className="flex flex-col gap-4 mt-2 items-center w-full">
                 <Field>
-                  <FieldLabel htmlFor="otp" className="sr-only">
+                  <FieldLabel htmlFor="forgot-otp" className="sr-only">
                     Código OTP
                   </FieldLabel>
+
                   <InputOTP
                     maxLength={6}
-                    id="otp"
-                    value={otp}
-                    onChange={(value: string) => setOtp(value)}
+                    id="forgot-otp"
+                    value={forgotOtp}
+                    onChange={(value: string) => setForgotOtp(value)}
                     containerClassName="gap-4 w-full justify-center"
                   >
                     <InputOTPGroup className="gap-2.5 *:data-[slot=input-otp-slot]:h-16 *:data-[slot=input-otp-slot]:w-12 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border *:data-[slot=input-otp-slot]:text-xl">
@@ -449,106 +571,416 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                     </InputOTPGroup>
                   </InputOTP>
 
-                  {otpError && (
-                    <div className="flex items-center gap-1 mt-1 text-sm text-red-500 ml-8.5">
+                  {forgotOtpError && (
+                    <div className="flex items-center gap-1 mt-1 text-sm text-red-500">
                       <AlertCircle size={16} />
-                      <span>{otpError}</span>
+                      <span>{forgotOtpError}</span>
                     </div>
                   )}
 
                   <FieldDescription className="text-center mt-1">
-                    O código não foi recebido?{" "}
+                    Não recebeu?{" "}
                     <button
                       type="button"
                       onClick={async () => {
-                        if (resending) return
-                        setResending(true)
+                        if (forgotResending) return;
+                        setForgotResending(true);
                         try {
-                          const res = await fetch("/api/resend-otp", {
+                          const res = await fetch("/api/forgot-pass", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ email }),
-                          })
-                          const data = await res.json()
-                          if (!res.ok) setOtpError(data.error || "Erro ao reenviar código")
+                            body: JSON.stringify({ email: forgotEmail }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) {
+                            setForgotOtpError(data.error || "Erro ao reenviar código");
+                          }
                         } catch {
-                          setOtpError("Erro ao reenviar código")
+                          setForgotOtpError("Erro ao reenviar código");
                         } finally {
-                          setResending(false)
+                          setForgotResending(false);
                         }
                       }}
                       className="text-muted-foreground underline cursor-pointer hover:text-foreground transition-all"
                     >
-                      {resending ? "enviando..." : "Reenviar Código"}
+                      {forgotResending ? "enviando..." : "Reenviar Código"}
                     </button>
                   </FieldDescription>
                 </Field>
               </div>
             )}
 
-            {step === "password" && (
+            {forgotStep === "reset" && (
               <div
                 className={cn(
-                  "relative overflow-hidden transition-all duration-500",
-                  showPasswordInput
-                    ? "max-h-[120px] opacity-100 translate-y-0"
-                    : "max-h-0 opacity-0 -translate-y-6"
-                )}
+        "relative overflow-hidden transition-all duration-500",
+        "max-h-[200px] opacity-100 translate-y-0"
+      )}
               >
-                <div className="relative flex flex-col gap-1">
-                  <Input
-                    id="password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className={cn(
-                      "bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 pr-12 rounded-b-md rounded-t-none transition-all duration-500 transform",
-                      passwordError ? "border-red-500" : "border-[#151515]",
-                      showPasswordInput ? "translate-y-0 opacity-100" : "-translate-y-6 opacity-0"
-                    )}
-                    style={{ fontFamily: "inherit" }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-6 -translate-y-1/2 text-muted-foreground hover:text-foreground opacity-50"
-                  >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
+                <div className="relative flex flex-col gap-1 pb-8">
+                  {/* Nova senha (top input) */}
+                  <div className="relative">
+                    <Input
+                      id="new-password"
+                      type={showNewPass ? "text" : "password"}
+                      placeholder="Nova senha"
+                      value={newPass}
+                      onChange={(e) => setNewPass(e.target.value)}
+                      className={cn(
+                        "bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 pr-12 rounded-t-md rounded-b-none transition-all duration-500 transform border",
+                        newPassError ? "border-red-500" : "border-[#151515]"
+                      )}
+                      style={{ fontFamily: "inherit" }}
+                    />
 
-                  {passwordError && (
+                    {/* olho individual da nova senha */}
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPass(!showNewPass)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground opacity-50"
+                    >
+                      {showNewPass ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
+                  </div>
+
+                  {/* Confirmar nova senha (bottom input) */}
+                  <div className="relative -mt-1">
+                    <Input
+                      id="new-password-confirm"
+                      type={showNewPassConfirm ? "text" : "password"}
+                      placeholder="Confirmar nova senha"
+                      value={newPassConfirm}
+                      onChange={(e) => setNewPassConfirm(e.target.value)}
+                      className={cn(
+                        "bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 pr-12 rounded-b-md rounded-t-none transition-all duration-500 transform border",
+                        newPassError ? "border-red-500" : "border-[#151515]"
+                      )}
+                      style={{ fontFamily: "inherit" }}
+                    />
+
+                    {/* olho individual da confirmação */}
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassConfirm(!showNewPassConfirm)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground opacity-50"
+                    >
+                      {showNewPassConfirm ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
+                  </div>
+
+                  {/* Erro geral das novas senhas */}
+                  {newPassError && (
                     <div
                       className={cn(
-                        "flex items-center gap-1 mt-1 text-sm text-red-500 transition-all duration-500 transform",
-                        showPasswordInput ? "translate-y-0 opacity-100" : "-translate-y-3 opacity-0"
+                        "absolute left-0 bottom-1 flex items-center gap-1 text-sm text-red-500 pointer-events-none transition-all duration-300",
+                        "opacity-100 translate-y-0"
                       )}
                     >
                       <AlertCircle size={16} />
-                      <span>{passwordError.message}</span>
+                      <span>{newPassError}</span>
                     </div>
                   )}
                 </div>
               </div>
+            )}
+
+            {/* =============== FLUXO NORMAL LOGIN / REGISTER =============== */}
+            {forgotStep === "idle" && (
+              <>
+                {/* FIELD EMAIL LOGIN */}
+                <div className="relative">
+                  <Input
+                    id="email"
+                    name="username"
+                    type="text"
+                    placeholder="Enter your email address"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={loading || step !== "email"}
+                    autoComplete="off"
+                    onFocus={() => setShowEmailError(false)}
+                    onBlur={() => emailError && setShowEmailError(true)}
+                    className={cn(
+                      "bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 pr-12 duration-300 rounded-t-md transition-all",
+                      emailError ? "border-red-500" : "border-[#151515]",
+                      loading ? "opacity-100" : "",
+                      step === "password" ? "rounded-b-none" : "rounded-b-md"
+                    )}
+                    style={{ fontFamily: "inherit" }}
+                  />
+                  {loading && (
+                    <Loader2
+                      className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground"
+                      size={20}
+                    />
+                  )}
+                </div>
+
+                {emailError && (
+                  <div className="flex items-center gap-1 mt-1 text-sm text-red-500">
+                    <AlertCircle size={16} />
+                    <span>{emailError.message}</span>
+                  </div>
+                )}
+
+                {step === "register" && !stepOtp && (
+                  <div className="flex flex-col transition-all duration-500 mt-4">
+                    <Input
+                      type="text"
+                      placeholder="Nome completo"
+                      value={nome}
+                      onChange={(e) => setNome(e.target.value)}
+                      disabled={submitting}
+                      className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-md rounded-t-md rounded-b-none transition-all duration-300"
+                      style={{ fontFamily: "inherit" }}
+                    />
+
+                    <Input
+                      type="text"
+                      placeholder="Número de telefone"
+                      value={telefone}
+                      onFocus={() => {
+                        if (!telefone.startsWith("+55")) {
+                          setTelefone("+55 ");
+                        }
+                      }}
+                      onChange={(e) => {
+                        let val = e.target.value.replace(/\D/g, "");
+                        if (val.length > 13) val = val.slice(0, 13);
+
+                        let formatted = "";
+                        if (val.length > 0) formatted = "+" + val.slice(0, 2);
+                        if (val.length >= 3) formatted += " " + val.slice(2, 4);
+                        if (val.length >= 5) formatted += " " + val.slice(4, 9);
+                        if (val.length >= 10) formatted += "-" + val.slice(9, 13);
+
+                        setTelefone(formatted);
+                      }}
+                      onBlur={() => {
+                        const digits = telefone.replace(/\D/g, "");
+                        if (digits.length !== 13) {
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (!/[0-9]/.test(e.key) && e.key !== "Backspace" && e.key !== "Delete") {
+                          e.preventDefault();
+                        }
+                      }}
+                      disabled={submitting}
+                      maxLength={17}
+                      className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-0 rounded-none transition-all duration-300"
+                      style={{ fontFamily: "inherit" }}
+                    />
+
+                    <Input
+                      type="text"
+                      placeholder="Cpf ou Cnpj"
+                      value={cpfCnpj}
+                      onChange={(e) => {
+                        let val = e.target.value.replace(/\D/g, "");
+
+                        if (val.length <= 11) {
+                          val = val.slice(0, 11);
+                          let formatted = val;
+                          if (val.length > 3) formatted = val.slice(0, 3) + "." + val.slice(3);
+                          if (val.length > 6) formatted = formatted.slice(0, 7) + "." + formatted.slice(7);
+                          if (val.length > 9) formatted = formatted.slice(0, 11) + "-" + formatted.slice(11);
+                          setCpfCnpj(formatted);
+                        } else {
+                          val = val.slice(0, 14);
+                          let formatted = val;
+                          if (val.length > 2) formatted = val.slice(0, 2) + "." + val.slice(2);
+                          if (val.length > 5) formatted = formatted.slice(0, 6) + "." + formatted.slice(6);
+                          if (val.length > 8) formatted = formatted.slice(0, 10) + "/" + formatted.slice(10);
+                          if (val.length > 12) formatted = formatted.slice(0, 15) + "-" + formatted.slice(15);
+                          setCpfCnpj(formatted);
+                        }
+                      }}
+                      disabled={submitting}
+                      maxLength={18}
+                      className="bg-[#020202] border-[#151515] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t-0 rounded-none transition-all duration-300"
+                      style={{ fontFamily: "inherit" }}
+                    />
+
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Crie uma senha"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={submitting}
+                      className="bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 border-t border-[#151515] rounded-b-md rounded-t-none transition-all duration-300"
+                      style={{ fontFamily: "inherit" }}
+                    />
+                    {registerError && (
+                      <div className="flex items-center gap-1 mt-1 text-sm text-red-500">
+                        <AlertCircle size={16} />
+                        <span>{registerError}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {stepOtp && (
+                  <div className="flex flex-col gap-4 mt-4 items-center w-full">
+                    <Field>
+                      <FieldLabel htmlFor="otp" className="sr-only">
+                        Código OTP
+                      </FieldLabel>
+                      <InputOTP
+                        maxLength={6}
+                        id="otp"
+                        value={otp}
+                        onChange={(value: string) => setOtp(value)}
+                        containerClassName="gap-4 w-full justify-center"
+                      >
+                        <InputOTPGroup className="gap-2.5 *:data-[slot=input-otp-slot]:h-16 *:data-[slot=input-otp-slot]:w-12 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border *:data-[slot=input-otp-slot]:text-xl">
+                          <InputOTPSlot index={0} />
+                          <InputOTPSlot index={1} />
+                          <InputOTPSlot index={2} />
+                        </InputOTPGroup>
+                        <InputOTPSeparator />
+                        <InputOTPGroup className="gap-2.5 *:data-[slot=input-otp-slot]:h-16 *:data-[slot=input-otp-slot]:w-12 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border *:data-[slot=input-otp-slot]:text-xl">
+                          <InputOTPSlot index={3} />
+                          <InputOTPSlot index={4} />
+                          <InputOTPSlot index={5} />
+                        </InputOTPGroup>
+                      </InputOTP>
+
+                      {otpError && (
+                        <div className="flex items-center gap-1 mt-1 text-sm text-red-500 ml-8.5">
+                          <AlertCircle size={16} />
+                          <span>{otpError}</span>
+                        </div>
+                      )}
+
+                      <FieldDescription className="text-center mt-1">
+                        O código não foi recebido?{" "}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (resending) return
+                            setResending(true)
+                            try {
+                              const res = await fetch("/api/resend-otp", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ email }),
+                              })
+                              const data = await res.json()
+                              if (!res.ok) setOtpError(data.error || "Erro ao reenviar código")
+                            } catch {
+                              setOtpError("Erro ao reenviar código")
+                            } finally {
+                              setResending(false)
+                            }
+                          }}
+                          className="text-muted-foreground underline cursor-pointer hover:text-foreground transition-all"
+                        >
+                          {resending ? "enviando..." : "Reenviar Código"}
+                        </button>
+                      </FieldDescription>
+                    </Field>
+                  </div>
+                )}
+
+                {/* PASSWORD LOGIN */}
+                {step === "password" && (
+                  <div
+                    className={cn(
+                      "relative overflow-hidden transition-all duration-500",
+                      showPasswordInput
+                        ? "max-h-[120px] opacity-100 translate-y-0"
+                        : "max-h-0 opacity-0 -translate-y-6"
+                    )}
+                  >
+                    <div className="relative flex flex-col gap-1 pb-8">
+                      <Input
+                        id="password"
+                        name="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="your password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className={cn(
+                          "bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground h-13 px-5 pr-12 rounded-b-md rounded-t-none transition-all duration-500 transform",
+                          passwordError ? "border-red-500" : "border-[#151515]",
+                          showPasswordInput ? "translate-y-0 opacity-100" : "-translate-y-6 opacity-0"
+                        )}
+                        style={{ fontFamily: "inherit" }}
+                      />
+
+                      {/* Toggle olho */}
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-4 top-6 -translate-y-1/2 text-muted-foreground hover:text-foreground opacity-50"
+                      >
+                        {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                      </button>
+
+                      {/* Erro senha login */}
+                      {passwordError && (
+                        <div
+                          className={cn(
+                            "absolute left-0 bottom-1 flex items-center gap-1 text-sm text-red-500 pointer-events-none transition-all duration-300",
+                            showPasswordInput ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1"
+                          )}
+                        >
+                          <AlertCircle size={16} />
+                          <span>{passwordError.message}</span>
+                        </div>
+                      )}
+
+                      {/* botão "Esqueceu a senha?" -> agora abre o fluxo inline */}
+                      <div className="absolute right-0 bottom-1 pointer-events-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotStep("request");
+                            setForgotEmail(email || "");
+                            setForgotError(null);
+                          }}
+                          className="text-sm opacity-50 hover:opacity-60 underline-offset-4 cursor-pointer transition"
+                        >
+                          Esqueceu a senha?
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
           <Field>
             <Button
               type="submit"
-              disabled={loading || submitting || otpSubmitting || (stepOtp && otp.length < 6)}
-              className="cback text-primary-foreground hover:bg-primary/90 h-13 text-base cursor-pointer flex items-center justify-center"
+              disabled={
+                loading ||
+                submitting ||
+                otpSubmitting ||
+                forgotLoading ||
+                forgotOtpSubmitting ||
+                (stepOtp && otp.length < 6) ||
+                (forgotStep === "otp" && forgotOtp.length < 6)
+              }
+              className="cback text-primary-foreground hover:bg-primary/90 h-13 text-base cursor-pointer flex items-center justify-center -mt-3"
             >
-              {step === "email"
-                ? "Next"
-                : submitting || otpSubmitting
-                  ? <Loader2 className="animate-spin" size={20} />
-                  : stepOtp
-                    ? "Validar código"
-                    : step === "register"
-                      ? "Registrar"
-                      : "Login"}
+              {forgotStep === "request"
+                ? (forgotLoading ? <Loader2 className="animate-spin" size={20} /> : "Continuar")
+                : forgotStep === "otp"
+                  ? (forgotOtpSubmitting ? <Loader2 className="animate-spin" size={20} /> : "Validar código")
+                  : forgotStep === "reset"
+                    ? (submitting ? <Loader2 className="animate-spin" size={20} /> : "Salvar nova senha")
+                    : step === "email"
+                      ? "Next"
+                      : submitting || otpSubmitting
+                        ? <Loader2 className="animate-spin" size={20} />
+                        : stepOtp
+                          ? "Validar código"
+                          : step === "register"
+                            ? "Registrar"
+                            : "Login"}
             </Button>
           </Field>
         </FieldGroup>
@@ -558,8 +990,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         Todos os direitos reservados © 2025 WyzeCode®. Ao fazer login, você concorda com nossos{" "}
         <a href="https://support.wyzecode.com/docs/terms-service" target="_blank" rel="noopener noreferrer">
           Termos de Serviço
-        </a>{" "}
-        e{" "}
+        </a>{" "}e{" "}
         <a href="https://support.wyzecode.com/docs/policy-politic" target="_blank" rel="noopener noreferrer">
           Política de Privacidade
         </a>.
