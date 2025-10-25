@@ -8,7 +8,6 @@ import { htmlMailTemplate } from "../html-mail/template";
 
 dotenv.config();
 
-// --- SMTP setup (igual ao register) ---
 const SMTP_USER = process.env.SMTP_USER!;
 const SMTP_PASS = process.env.SMTP_PASS!;
 const SMTP_HOST = process.env.SMTP_HOST || "smtp.hostinger.com";
@@ -26,18 +25,14 @@ const transporter = nodemailer.createTransport({
   tls: { rejectUnauthorized: false },
 });
 
-// --- helpers ---
-
 function generateOTP() {
   return randomInt(100000, 999999).toString();
 }
 
 function validatePasswordPolicy(pw: string): boolean {
-  // mesma regra usada no resto do app
   return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\da-zA-Z]).{8,}$/.test(pw);
 }
 
-// mesmo parser amigável que você já usa no register
 function parseUserAgentFriendly(ua: string | null): string {
   if (!ua) return "Desconhecido";
 
@@ -63,7 +58,6 @@ export async function POST(req: NextRequest) {
   try {
     const { email, otp, password } = await req.json();
 
-    // Extrai IP + userAgent pra colocar no e-mail de segurança
     const xf = req.headers.get("x-forwarded-for");
     const ip =
       (xf ? xf.split(",")[0].trim() : null) ||
@@ -75,12 +69,7 @@ export async function POST(req: NextRequest) {
     const userAgentRaw = req.headers.get("user-agent") || "";
     const friendlyBrowser = parseUserAgentFriendly(userAgentRaw);
 
-    //
-    // PASSO 1
-    // Só email -> gerar OTP e enviar email de Redefinição de Senha
-    //
     if (email && !otp && !password) {
-      // 1. precisa existir o usuário
       const [userRows] = await db.query(
         "SELECT id, name FROM users WHERE email=? LIMIT 1",
         [email]
@@ -93,9 +82,8 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // 2. gera OTP e salva (10 min de validade)
       const code = generateOTP();
-      const expireAt = new Date(Date.now() + 10 * 60 * 1000); // +10min
+      const expireAt = new Date(Date.now() + 10 * 60 * 1000);
 
       const [lastCodes] = await db.query(
         "SELECT id, status FROM forgot_pass_codes WHERE email=? ORDER BY created_at DESC LIMIT 1",
@@ -118,27 +106,14 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // 3. monta o corpo do e-mail reutilizando o template global,
-      //    trocando os placeholders. O assunto e a headline viram
-      //    "Redefinição de Senha"
       const emailBody = htmlMailTemplate
         .replace(/{{OTP}}/g, code)
         .replace(/{{NOME}}/g, user?.name || "Usuário")
         .replace(/{{IP}}/g, ip)
         .replace(/{{BROWSER}}/g, friendlyBrowser)
-        // se seu template tiver um título fixo tipo "Seu código de verificação",
-        // e você marcou isso como placeholder, você pode ter algo tipo {{TITLE}}.
-        // Caso não tenha TITLE no template hoje, você pode alterar o template
-        // pra usar {{TITLE}} e {{DESC}} ou pode fazer um replace simples em uma
-        // string conhecida. Aqui vou supor que você adicionou {{TITLE}} e {{DESC}}
-        // no template base pra ficar bonitinho:
         .replace(/{{TITLE}}/g, "Redefinição de Senha")
-        .replace(
-          /{{DESC}}/g,
-          "Use o código abaixo para continuar o processo de redefinição da sua senha Wyze Bank."
-        );
+        .replace(/{{DESC}}/g, "Use o código abaixo para continuar o processo de redefinição da sua senha Wyze Bank.");
 
-      // 4. dispara o e-mail
       await transporter.sendMail({
         from: `"Wyze Bank" <${SMTP_USER}>`,
         to: email,
@@ -152,10 +127,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    //
-    // PASSO 2
-    // email + otp -> validar OTP, sem trocar senha ainda
-    //
     if (email && otp && !password) {
       const [rows] = await db.query(
         "SELECT * FROM forgot_pass_codes WHERE email=? ORDER BY created_at DESC LIMIT 1",
@@ -191,7 +162,6 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // marca como validado pra permitir alteração de senha
       await db.query(
         "UPDATE forgot_pass_codes SET status='validated' WHERE id=?",
         [last.id]
@@ -203,12 +173,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    //
-    // PASSO 3
-    // email + otp + password -> trocar senha
-    //
     if (email && otp && password) {
-      // 1. força regra de complexidade
       if (!validatePasswordPolicy(password)) {
         return NextResponse.json(
           {
@@ -219,7 +184,6 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // 2. checa OTP mais recente e se ele ainda é válido e marcado como validated
       const [rows] = await db.query(
         "SELECT * FROM forgot_pass_codes WHERE email=? ORDER BY created_at DESC LIMIT 1",
         [email]
@@ -238,7 +202,6 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // 3. pega hash atual do usuário
       const [userRows] = await db.query(
         "SELECT id, password_hash FROM users WHERE email=? LIMIT 1",
         [email]
@@ -252,7 +215,6 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // 4. impede senha nova = senha antiga
       const samePassword = await bcrypt.compare(password, user.password_hash);
       if (samePassword) {
         return NextResponse.json(
@@ -261,14 +223,12 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // 5. gera e salva o novo hash
       const newHash = await bcrypt.hash(password, 10);
       await db.query(
         "UPDATE users SET password_hash=? WHERE email=? LIMIT 1",
         [newHash, email]
       );
 
-      // 6. bloqueia esse código pra não reutilizar
       await db.query(
         "UPDATE forgot_pass_codes SET status='blocked' WHERE id=?",
         [last.id]
@@ -277,11 +237,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         message: "Senha atualizada com sucesso.",
-        email, // devolve email pra já preencher na tela
+        email,
       });
     }
 
-    // fallback payload inválido
     return NextResponse.json(
       { error: "Payload inválido." },
       { status: 400 }

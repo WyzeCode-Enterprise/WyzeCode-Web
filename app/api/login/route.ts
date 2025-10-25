@@ -7,9 +7,6 @@ import bcrypt from "bcryptjs";
 
 const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
 
-/**
- * Função para identificar de forma amigável o navegador e sistema operacional
- */
 function parseUserAgent(ua: string) {
   const u = ua.toLowerCase();
   let browser = "Desconhecido";
@@ -41,7 +38,6 @@ export async function POST(req: NextRequest) {
     const { email, password } = await req.json();
     if (!email) return NextResponse.json({ error: "Email é obrigatório" }, { status: 400 });
 
-    // Busca usuário
     const [rows] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
     const user = (rows as any)[0];
     if (!user) return NextResponse.json({ newUser: true });
@@ -49,12 +45,10 @@ export async function POST(req: NextRequest) {
     if (!password)
       return NextResponse.json({ error: "Senha obrigatória" }, { status: 400 });
 
-    // Verifica senha (bcrypt)
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid)
       return NextResponse.json({ error: "Email ou senha incorretos" }, { status: 401 });
 
-    // Captura IP e UA
     const ip =
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
       req.headers.get("cf-connecting-ip") ||
@@ -64,7 +58,6 @@ export async function POST(req: NextRequest) {
     const ua = req.headers.get("user-agent") || "Desconhecido";
     const { browser, os } = parseUserAgent(ua);
 
-    // Tenta obter localização
     let geo: any = {};
     try {
       const r = await axios.get(`https://ipapi.co/${ip}/json/`, { timeout: 3000 });
@@ -73,12 +66,10 @@ export async function POST(req: NextRequest) {
       geo = {};
     }
 
-    // Cria tokens
     const sessionId = uuidv4();
     const sessionToken = jwt.sign({ uid: user.id, sid: sessionId }, JWT_SECRET, { expiresIn: "24h" });
     const expireToken = jwt.sign({ uid: user.id, sid: sessionId }, JWT_SECRET, { expiresIn: "25h" });
 
-    // Salva login detalhado
     await db.query(
       `INSERT INTO logins (
         user_id, ip, browser, os, region, country, state, city,
@@ -103,7 +94,6 @@ export async function POST(req: NextRequest) {
       ]
     );
 
-    // Configura resposta
     const res = NextResponse.json({
       success: true,
       redirect: "/dash",

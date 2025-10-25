@@ -174,9 +174,6 @@ async function validatePF_Strict(cpf: string, nomeInformado: string): Promise<
   }
 }
 
-
-
-
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   return digits.startsWith("55") ? "+" + digits : "+55" + digits;
@@ -423,12 +420,14 @@ export async function POST(req: NextRequest) {
         .replace(/{{OTP}}/g, otp)
         .replace(/{{NOME}}/g, nome)
         .replace(/{{IP}}/g, ip)
-        .replace(/{{BROWSER}}/g, friendlyBrowser);
+        .replace(/{{BROWSER}}/g, friendlyBrowser)
+        .replace(/{{TITLE}}/g, "Criação da conta")
+        .replace(/{{DESC}}/g, "Use o código abaixo para continuar o processo de criação de sua conta Wyze Bank.");
 
       await transporter.sendMail({
         from: `"Wyze Bank" <${SMTP_USER}>`,
         to: email,
-        subject: "Seu código de verificação - Wyze Bank",
+        subject: "Código de verificação - Criação da conta",
         html: emailBody,
       });
 
