@@ -436,7 +436,7 @@ export async function POST(req: NextRequest) {
 
     if (!lastOtp) return NextResponse.json({ error: "Nenhum OTP encontrado." }, { status: 400 });
     if (lastOtp.status !== "pending") return NextResponse.json({ error: "OTP já utilizado." }, { status: 400 });
-    if (new Date(lastOtp.expires_at) < new Date()) return NextResponse.json({ error: "OTP expirado." }, { status: 400 });
+    if (new Date(lastOtp.expires_at) < new Date()) return NextResponse.json({ error: "Este código de verificação está expirado" }, { status: 400 });
     if (lastOtp.otp !== otpUser) return NextResponse.json({ error: "Código incorreto." }, { status: 400 });
 
     try {

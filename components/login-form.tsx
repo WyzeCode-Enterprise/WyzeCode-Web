@@ -987,7 +987,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
       </form>
 
       <FieldDescription className="px-6 text-center text-[12px] opacity-50">
-        Todos os direitos reservados © 2025 WyzeCode®. Ao fazer login, você concorda com nossos{" "}
+        Todos os direitos reservados ® 2025 Wyze Bank. Ao fazer login, você concorda com nossos{" "}
         <a href="https://support.wyzecode.com/docs/terms-service" target="_blank" rel="noopener noreferrer">
           Termos de Serviço
         </a>{" "}e{" "}
