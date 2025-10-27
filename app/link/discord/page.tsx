@@ -41,9 +41,9 @@ export default function Page() {
           </span>
 
           <img
-            src="/spotify-icon.svg"
-            alt="Spotify"
-            className="relative h-20 w-20"
+            src="https://wyzebank.com/lg_files_wb/wzc_imgs/v1/66e3d7f4ef6498ac018f2c55_Symbol.svg"
+            alt="Discord"
+            className="relative h-15"
           />
         </div>
 
@@ -51,9 +51,9 @@ export default function Page() {
         <div className="flex flex-col items-center gap-3 max-w-[90vw]">
           <h1 className="text-[20px] sm:text-[22px] font-normal leading-snug text-white">
             Sua conta do{" "}
-            <span className="font-semibold text-white">Spotify</span> foi
-            conectada ao{" "}
-            <span className="font-semibold text-white">Discord</span>
+            <span className="font-semibold text-white">Discord</span> foi
+            conectada a{" "}
+            <span className="font-semibold text-white">Wyze Bank</span>
           </h1>
 
           <p className="text-[15px] leading-relaxed text-white/60 max-w-[360px]">
