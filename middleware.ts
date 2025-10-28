@@ -8,20 +8,40 @@ const ALLOWED_REDIRECT_HOSTS = [
   "localhost:3000",
 ];
 
-// helper: essa URL quer fluxo Discord?
+// helper: tenta normalizar o valor cru do redirect
+function normalizeRedirectParam(raw: string | null): string | null {
+  if (!raw) return null;
+
+  // tenta decodificar caso tenha vindo urlencoded
+  // tipo "https%3A%2F%2Fwyzebank.com%2Flink%2Fdiscord"
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    // se der erro no decodeURIComponent ignora e segue com o original
+  }
+
+  return decoded;
+}
+
+// helper: essa URL representa fluxo do Discord (/link/discord)?
 function isDiscordRedirectParam(raw: string | null): boolean {
   if (!raw) return false;
 
-  // caso 1: veio já como path interno
-  // ex: /link/discord
-  if (raw === "/link/discord") {
+  const candidate = normalizeRedirectParam(raw);
+  if (!candidate) return false;
+
+  // Caso 1: veio como path interno puro
+  // ex: "/link/discord"
+  if (candidate === "/link/discord") {
     return true;
   }
 
-  // caso 2: veio como URL absoluta tipo:
-  // http://localhost:3000/link/discord  (ou https://wyzebank.com/link/discord)
+  // Caso 2: veio como URL absoluta
+  // ex: "https://wyzebank.com/link/discord"
+  // ou   "http://localhost:3000/link/discord"
   try {
-    const u = new URL(raw);
+    const u = new URL(candidate);
 
     if (!ALLOWED_REDIRECT_HOSTS.includes(u.host)) {
       return false;
@@ -31,10 +51,27 @@ function isDiscordRedirectParam(raw: string | null): boolean {
       return true;
     }
   } catch {
-    // se não é URL válida, ignora
+    // não era URL absoluta válida, ignora
   }
 
   return false;
+}
+
+// helper: pega o valor do redirect mesmo se vier zoado tipo "? redirect=..."
+function getRedirectParamLoose(req: NextRequest): string | null {
+  // tenta o normal primeiro
+  let value = req.nextUrl.searchParams.get("redirect");
+  if (value) return value;
+
+  // fallback: procurar qualquer chave que, após trim, vire "redirect"
+  // isso cobre "? redirect=..." (com espaço antes)
+  for (const [key, val] of req.nextUrl.searchParams.entries()) {
+    if (key.trim().toLowerCase() === "redirect") {
+      return val;
+    }
+  }
+
+  return null;
 }
 
 export function middleware(req: NextRequest) {
@@ -42,7 +79,7 @@ export function middleware(req: NextRequest) {
   const session = req.cookies.get("wzb_lg")?.value;
 
   // ======================================================
-  // (A) PROTEGER /app/**
+  // (A) proteger /app/**
   // mesma lógica que você já tinha
   // ======================================================
   if (
@@ -59,14 +96,15 @@ export function middleware(req: NextRequest) {
   // ======================================================
   // (B) SETAR wzb_postlogin_redirect QUANDO ACESSA /login
   //
-  // Se o cara abriu /login?redirect=<alguma coisa que aponta pra /link/discord>,
-  // nós criamos o cookie "wzb_postlogin_redirect" = "/link/discord".
+  // Se o cara abriu /login com redirect apontando pra /link/discord
+  // (mesmo que tenha espaço no "? redirect="), criamos o cookie
+  // wzb_postlogin_redirect = "/link/discord".
   //
-  // Esse cookie é lido depois no /dash pra fazer o redirect automático.
+  // Esse cookie é lido depois no /dash pra redirecionar automaticamente.
   // ======================================================
   if (req.nextUrl.pathname === "/login") {
-    const redirectParam = req.nextUrl.searchParams.get("redirect");
-    const wantsDiscord = isDiscordRedirectParam(redirectParam);
+    const rawRedirectParam = getRedirectParamLoose(req);
+    const wantsDiscord = isDiscordRedirectParam(rawRedirectParam);
 
     if (wantsDiscord) {
       const res = NextResponse.next();
@@ -78,7 +116,7 @@ export function middleware(req: NextRequest) {
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
         path: "/",
-        maxAge: 300, // ~5min: tempo suficiente pro login -> /dash -> /link/discord
+        maxAge: 300, // ~5min: tempo suficiente login -> /dash -> /link/discord
       });
 
       return res;
@@ -88,25 +126,18 @@ export function middleware(req: NextRequest) {
   // ======================================================
   // (C) APAGAR wzb_postlogin_redirect QUANDO O USER JÁ CHEGOU
   //
-  // Cenário:
-  //  1. user faz login com redirect especial
-  //  2. /dash vê o cookie e manda ele pra /link/discord
-  //  3. quando ele já ESTÁ em /link/discord (ou no callback),
-  //     esse cookie não tem mais utilidade e pode quebrar login futuro.
-  //
-  // Então aqui limpamos ele.
-  //
-  // IMPORTANTE: isso acontece no request de /link/discord*,
-  // então só depois do redirecionamento ter acontecido.
+  // Fluxo:
+  //  1. user entrou no /login com redirect pro discord -> cookie criado
+  //  2. fez login -> /dash leu o cookie e redirecionou pro /link/discord
+  //  3. agora que ele JÁ está em /link/discord (/link/discord ou /link/discord/callback),
+  //     limpamos o cookie pra não interferir em próximos logins normais
   // ======================================================
   if (
     req.nextUrl.pathname === "/link/discord" ||
     req.nextUrl.pathname.startsWith("/link/discord/")
   ) {
-    // vamos sempre mandar resposta next(), mas sobrescrevendo o cookie
     const res = NextResponse.next();
 
-    // deletar o cookie = setar Max-Age=0
     res.cookies.set({
       name: "wzb_postlogin_redirect",
       value: "",
@@ -129,10 +160,10 @@ export function middleware(req: NextRequest) {
 // ======================================================
 // matcher
 //
-// precisamos interceptar:
-// - /app/**          (proteção + não logado redirect login)
-// - /login           (pra setar o cookie postlogin)
-// - /link/discord**  (pra apagar o cookie quando chegou lá)
+// precisa rodar em:
+// - /app/**          (proteção área logada)
+// - /login           (pra criar o cookie pós-login se for fluxo discord)
+// - /link/discord**  (pra deletar o cookie depois que já chegou)
 // ======================================================
 export const config = {
   matcher: ["/app/:path*", "/login", "/link/discord/:path*"],
