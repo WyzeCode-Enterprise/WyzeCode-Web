@@ -8,9 +8,18 @@ type DiscordLinkedUser = {
   avatar?: string | null;
 };
 
+
+
 export default function DiscordLinkPage() {
   const [loading, setLoading] = React.useState(true);
   const [sessionUser, setSessionUser] = React.useState<DiscordLinkedUser | null>(null);
+
+  React.useEffect(() => {
+    try {
+      // apaga o cookie de pós-login assim que chegarmos aqui
+      document.cookie = "wzb_postlogin_redirect=; Path=/; Max-Age=0; SameSite=Lax;";
+    } catch {}
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
