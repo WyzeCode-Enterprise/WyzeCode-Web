@@ -19,6 +19,9 @@ const SESSION_COOKIE_SECRET =
   process.env.SESSION_COOKIE_SECRET ||
   "wyze_default_session_pepper_change_me";
 
+const POSTLOGIN_REDIRECT_COOKIE =
+  process.env.POSTLOGIN_REDIRECT_COOKIE || "wzb_postlogin_redirect";
+
 if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET || !DISCORD_REDIRECT_URI) {
   throw new Error(
     "❌ Faltando DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET / DISCORD_REDIRECT_URI no .env"
@@ -79,7 +82,7 @@ function buildDiscordAuthUrl(state?: string) {
 
   if (state) params.set("state", state);
 
-  // TEM que ser https://discord.com/oauth2/... (não http)
+  // sempre https
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
 
@@ -137,7 +140,6 @@ async function getDiscordSessionFromCookie(req: NextRequest) {
 
 /* -------------------------------------------------
    6. troca "code" -> access_token no Discord
-      IMPORTANTE: usar HTTPS e content-type correto
 ------------------------------------------------- */
 async function exchangeCodeForToken(code: string) {
   const body = new URLSearchParams({
@@ -154,7 +156,7 @@ async function exchangeCodeForToken(code: string) {
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body, // URLSearchParams já serializa no formato correto
+    body,
   });
 
   if (!resp.ok) {
@@ -175,7 +177,6 @@ async function exchangeCodeForToken(code: string) {
 
 /* -------------------------------------------------
    7. pega perfil do usuário no Discord
-      (precisa do access_token)
 ------------------------------------------------- */
 async function fetchDiscordUser(access_token: string) {
   const resp = await fetch("https://discord.com/api/users/@me", {
@@ -243,16 +244,11 @@ async function createDiscordSession({
 
 /* -------------------------------------------------
    GET /api/discord-vn
-   - garante Wyze logado
-   - se já tem Discord vinculado => ready:true
-   - senão, devolve URL de auth do Discord
-   - se nem Wyze logado, devolve needLogin:true
 ------------------------------------------------- */
 export async function GET(req: NextRequest) {
   try {
     const wyzeUser = await getWyzeUserFromCookies(req);
 
-    // não logado na Wyze -> manda pro login com redirect já preparado
     if (!wyzeUser) {
       return NextResponse.json({
         ready: false,
@@ -263,7 +259,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // já tem discord salvo no perfil do usuário
+    // já vinculado no banco
     if (wyzeUser.discord_id) {
       return NextResponse.json({
         ready: true,
@@ -275,7 +271,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // checa se já tem sessão Discord nessa aba
+    // checa sessão discord atual (mesma aba)
     const discSession = await getDiscordSessionFromCookie(req);
     if (discSession && discSession.wyze_user_id === wyzeUser.id) {
       return NextResponse.json({
@@ -288,7 +284,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // se não tem vínculo ainda -> gerar URL do Discord OAuth
+    // ainda não vinculou -> devolve URL OAuth do Discord
     const state = randomBytes(8).toString("hex");
     const discordAuthUrl = buildDiscordAuthUrl(state);
 
@@ -308,12 +304,6 @@ export async function GET(req: NextRequest) {
 
 /* -------------------------------------------------
    POST /api/discord-vn
-   - chamado quando voltamos do Discord com ?code=...
-   - precisa Wyze logado
-   - troca code pelo token
-   - pega perfil
-   - vincula na tabela users
-   - cria sessão Discord + cookie
 ------------------------------------------------- */
 export async function POST(req: NextRequest) {
   try {
@@ -325,7 +315,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // tem que estar logado na Wyze
+    // precisa estar logado Wyze
     const wyzeUser = await getWyzeUserFromCookies(req);
     if (!wyzeUser) {
       return NextResponse.json(
@@ -341,9 +331,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // se já tem Discord vinculado, devolve direto
+    // se já tem discord_id salvo na tabela users, não precisa refazer fluxo
     if (wyzeUser.discord_id) {
-      return NextResponse.json({
+      // monta resposta
+      const res = NextResponse.json({
         success: true,
         alreadyLinked: true,
         redirect: "https://wyzebank.com/link/discord",
@@ -353,11 +344,17 @@ export async function POST(req: NextRequest) {
           avatar: wyzeUser.discord_avatar || null,
         },
       });
+
+      // === NOVO: se já temos todos os cookies principais,
+      // limpamos o wzb_postlogin_redirect
+      cleanupPostloginRedirectCookie(req, res);
+
+      return res;
     }
 
     const { ip, userAgent } = getRequestMeta(req);
 
-    // troca code -> access_token (esse era o ponto que tava quebrando: agora HTTPS + runtime nodejs)
+    // troca o code pelo access_token do Discord
     const tokenData = await exchangeCodeForToken(code);
 
     // pega /users/@me
@@ -372,7 +369,7 @@ export async function POST(req: NextRequest) {
 
     const avatarHash = discordUser.avatar || null;
 
-    // garantir que esse Discord não está em OUTRA conta Wyze
+    // garantir unicidade no banco
     const [takenRows] = await db.query(
       "SELECT id FROM users WHERE discord_id = ? LIMIT 1",
       [discord_id]
@@ -387,7 +384,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // salvar vínculo no usuário Wyze
+    // salvar vínculo Discord -> user Wyze
     await db.query(
       `UPDATE users
        SET discord_id = ?, discord_username = ?, discord_avatar = ?
@@ -395,7 +392,7 @@ export async function POST(req: NextRequest) {
       [discord_id, displayName, avatarHash, wyzeUser.id]
     );
 
-    // criar sessão Discord dedicada pra essa aba
+    // criar sessão Discord dedicada (cookie discord_session)
     const session_token = await createDiscordSession({
       wyzeUserId: wyzeUser.id,
       discord_id,
@@ -406,7 +403,7 @@ export async function POST(req: NextRequest) {
       userAgent,
     });
 
-    // montar resposta pro front e setar cookie httpOnly discord_session
+    // montar resposta final pro front
     const res = NextResponse.json({
       success: true,
       redirect: "https://wyzebank.com/link/discord",
@@ -418,6 +415,8 @@ export async function POST(req: NextRequest) {
     });
 
     const isProd = process.env.NODE_ENV === "production";
+
+    // set cookie discord_session
     res.cookies.set(SESSION_COOKIE_NAME, session_token, {
       httpOnly: true,
       secure: isProd,
@@ -426,6 +425,10 @@ export async function POST(req: NextRequest) {
       maxAge: 60 * 60, // 1h
     });
 
+    // === NOVO: se já temos todos os cookies principais,
+    // limpamos o wzb_postlogin_redirect
+    cleanupPostloginRedirectCookie(req, res);
+
     return res;
   } catch (err: any) {
     console.error("[DISCORD POST ERROR]", err);
@@ -433,5 +436,36 @@ export async function POST(req: NextRequest) {
       { error: err.message || "Erro ao validar Discord" },
       { status: 500 }
     );
+  }
+}
+
+/* -------------------------------------------------
+   helper: limpar wzb_postlogin_redirect
+   se o user já está logado (wzb_lg + wzb_lg_e) e
+   agora tem sessão Discord (vamos setar discord_session),
+   então esse cookie de pós-login não é mais necessário.
+------------------------------------------------- */
+function cleanupPostloginRedirectCookie(
+  req: NextRequest,
+  res: NextResponse
+) {
+  const hasWyzeSession = Boolean(req.cookies.get("wzb_lg")?.value);
+  const hasWyzeSessionE = Boolean(req.cookies.get("wzb_lg_e")?.value);
+  const hasDiscordSession = Boolean(req.cookies.get(SESSION_COOKIE_NAME)?.value);
+
+  // regra pedida:
+  // "se a pessoa tem cookie discord_session, wzb_lg e wzb_lg_e,
+  // remover o cookie wzb_postlogin_redirect"
+  // Observação: discord_session novo vai ser setado AGORA no res,
+  // então a gente considera que no final ela terá os três.
+  if (hasWyzeSession && hasWyzeSessionE) {
+    // deletar wzb_postlogin_redirect
+    res.cookies.set(POSTLOGIN_REDIRECT_COOKIE, "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0, // apaga
+    });
   }
 }

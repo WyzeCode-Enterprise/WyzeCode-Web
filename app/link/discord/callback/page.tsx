@@ -39,17 +39,32 @@ export default function DiscordCallbackPage() {
         // limpamos o cookie assim que o fluxo do Discord tentou finalizar
         clearPostLoginCookie();
 
-        if (data?.success && data?.redirect) {
-          window.location.href = data.redirect;
+        // caso sucesso total no vínculo
+        if (data?.success) {
+          // base redirect que backend mandou, ou fallback local
+          const baseRedirect =
+            typeof data.redirect === "string" && data.redirect.length > 0
+              ? data.redirect
+              : "/link/discord";
+
+          // garante que só adiciona ?success=1 uma vez
+          const urlObj = new URL(
+            baseRedirect,
+            window.location.origin // caso venha rota relativa tipo "/link/discord"
+          );
+          urlObj.searchParams.set("success", "1");
+
+          window.location.href = urlObj.toString();
           return;
         }
 
+        // se precisa logar antes
         if (data?.needLogin && data?.loginUrl) {
           window.location.href = data.loginUrl;
           return;
         }
 
-        // fallback padrão
+        // fallback padrão (sem sucesso)
         window.location.href = "/link/discord";
       } catch {
         clearPostLoginCookie();
