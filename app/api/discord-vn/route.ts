@@ -451,7 +451,6 @@ function cleanupPostloginRedirectCookie(
 ) {
   const hasWyzeSession = Boolean(req.cookies.get("wzb_lg")?.value);
   const hasWyzeSessionE = Boolean(req.cookies.get("wzb_lg_e")?.value);
-  const hasDiscordSession = Boolean(req.cookies.get(SESSION_COOKIE_NAME)?.value);
 
   // regra pedida:
   // "se a pessoa tem cookie discord_session, wzb_lg e wzb_lg_e,

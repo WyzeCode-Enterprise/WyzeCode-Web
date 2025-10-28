@@ -110,9 +110,6 @@ function pickFinalRedirect({
  * - Se queryRedirect for "/link/discord" direto -> true
  * - Se queryRedirect for URL absoluta permitida, e pathname === "/link/discord" -> true
  * - Senão -> false
- *
- * Isso cobre exatamente seu caso:
- *   redirect=http%3A%2F%2Flocalhost%3A3000%2Flink%2Fdiscord
  */
 function isDiscordFlowRequested(queryRedirect: string | null): boolean {
   if (!queryRedirect) return false;
@@ -144,19 +141,12 @@ function isDiscordFlowRequested(queryRedirect: string | null): boolean {
  * Helper pra anexar (ou limpar) o cookie wzb_postlogin_redirect
  * em QUALQUER resposta.
  *
- * Regra nova que você pediu:
+ * Regra:
  * - Se URL da requisição atual contém redirect apontando pra /link/discord,
  *   então SEMPRE setar wzb_postlogin_redirect = "/link/discord"
  *   (httpOnly, etc), mesmo se o login ainda não finalizou.
  *
- * - Caso contrário, não mexe nesse cookie.
- *
- * Observação:
- * Você disse "em tempo real vai adicionar ... só isso".
- * Então aqui a gente SÓ faz set quando for true,
- * não limpa se for false.
- *
- * Se quiser limpar quando não for discordFlowNow, dá pra mudar.
+ * Se não for fluxo discord, não mexe.
  */
 function attachDiscordCookie(
   res: NextResponse,
@@ -181,6 +171,112 @@ function attachDiscordCookie(
 
 export async function POST(req: NextRequest) {
   try {
+    // ============================
+    // 0. AUTOLOGIN PELO COOKIE
+    // ============================
+    //
+    // Se a pessoa já tem sessão (wzb_lg), não precisa nem mandar email/senha.
+    // A gente valida o JWT, busca o user e já responde sucesso + redirect final.
+    //
+    // Isso permite:
+    //   - Abrir /login já logado → vai direto pra /dash (ou pra redirect seguro)
+    //   - Fluxo /link/discord também sem pedir senha de novo
+    //
+    const existingSessionJwt = req.cookies.get("wzb_lg")?.value || null;
+
+    if (existingSessionJwt) {
+      try {
+        // valida o token da sessão
+        const decoded: any = jwt.verify(existingSessionJwt, JWT_SECRET);
+        const userIdFromToken = decoded?.uid;
+
+        if (userIdFromToken) {
+          // pega o user do banco só com dados básicos
+          const [rowsSession] = await db.query(
+            "SELECT id, name, email, phone FROM users WHERE id = ? LIMIT 1",
+            [userIdFromToken]
+          );
+          const sessionUser = (rowsSession as any)[0];
+
+          if (sessionUser) {
+            // ler os mesmos parâmetros que usamos depois
+            const urlNow = new URL(req.url);
+            const queryNextNow = urlNow.searchParams.get("next");
+            const queryRedirectNow = urlNow.searchParams.get("redirect");
+            const cookieNextNow =
+              req.cookies.get(NEXT_COOKIE_NAME)?.value || null;
+
+            // isso vale pra setar wzb_postlogin_redirect se for fluxo discord
+            const discordFlowNow = isDiscordFlowRequested(queryRedirectNow);
+
+            // calcula o redirect final (prioridade redirect > next > cookie > /dash)
+            const finalRedirectNow = pickFinalRedirect({
+              queryRedirect: queryRedirectNow,
+              queryNext: queryNextNow,
+              bodyNext: null,
+              cookieNext: cookieNextNow,
+            });
+
+            // resposta pronta, já logado
+            const resAlready = NextResponse.json({
+              success: true,
+              redirect: finalRedirectNow,
+              user: {
+                id: sessionUser.id,
+                name: sessionUser.name,
+                email: sessionUser.email,
+                phone: sessionUser.phone,
+              },
+              reusedSession: true,
+            });
+
+            // garante o cookie do fluxo discord se precisar
+            attachDiscordCookie(resAlready, discordFlowNow);
+
+            // renova TTL dos cookies de sessão pra manter vivo
+            const isProd = process.env.NODE_ENV === "production";
+            const baseCookieOpts = {
+              httpOnly: true,
+              secure: isProd,
+              sameSite: "lax" as const,
+              path: "/",
+            };
+
+            // regrava wzb_lg com mesmo token, só estica maxAge
+            resAlready.cookies.set("wzb_lg", existingSessionJwt, {
+              ...baseCookieOpts,
+              maxAge: 86400, // 24h
+            });
+
+            // se o browser ainda tem wzb_lg_e, renova também
+            const existingExpireJwt =
+              req.cookies.get("wzb_lg_e")?.value || null;
+            if (existingExpireJwt) {
+              resAlready.cookies.set("wzb_lg_e", existingExpireJwt, {
+                ...baseCookieOpts,
+                maxAge: 90000, // 25h
+              });
+            }
+
+            // limpa o cookie NEXT_COOKIE_NAME, pq já resolvemos navegação
+            resAlready.cookies.set(NEXT_COOKIE_NAME, "", {
+              ...baseCookieOpts,
+              maxAge: 0,
+            });
+
+            return resAlready;
+          }
+        }
+        // se token inválido / user não existe / etc → cai pro fluxo normal de login
+      } catch {
+        // se o JWT estiver expirado ou inválido, segue fluxo normal pedindo login
+      }
+    }
+
+    // ============================
+    // 1. FLUXO NORMAL (email/senha)
+    // ============================
+
     // body enviado pelo front
     const { email, password, next: nextFromBody } = await req.json();
 
