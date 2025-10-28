@@ -5,13 +5,13 @@ import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import { db } from "../db";
 
-export const runtime = "nodejs"; // garante ambiente Node (não edge) pra usar crypto/banco/etc
+export const runtime = "nodejs";
 dotenv.config();
 
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID!;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET!;
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI!;
-const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey"; // mesmo do login
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 const SESSION_COOKIE_NAME =
   process.env.SESSION_COOKIE_NAME || "discord_session";
