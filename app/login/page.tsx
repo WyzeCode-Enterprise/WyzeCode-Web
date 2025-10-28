@@ -1,4 +1,4 @@
-import { LoginForm } from "@/components/login-form"
+import { LoginForm } from "@/components/login-form";
 
 export default function LoginPage() {
   return (
@@ -6,7 +6,6 @@ export default function LoginPage() {
       <div className="w-full max-w-[450px]">
         <LoginForm />
       </div>
-      
     </div>
-  )
+  );
 }
