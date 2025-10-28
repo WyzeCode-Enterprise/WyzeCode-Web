@@ -75,6 +75,7 @@ export default function LoginPage() {
       <div className="w-full max-w-[450px]">
         {booting && !showForm ? (
           <div className="text-sm text-muted-foreground text-center">
+            Validando login...
           </div>
         ) : (
           <LoginForm />
