@@ -47,14 +47,14 @@ export default function DiscordCallbackPage() {
               ? data.redirect
               : "/link/discord";
 
-          // // garante que só adiciona ?success=1 uma vez
-          // const urlObj = new URL(
-          //   baseRedirect,
-          //   window.location.origin // caso venha rota relativa tipo "/link/discord"
-          // );
-          // urlObj.searchParams.set("success", "1");
+          // garante que só adiciona ?success=1 uma vez
+          const urlObj = new URL(
+            baseRedirect,
+            window.location.origin // caso venha rota relativa tipo "/link/discord"
+          );
+          urlObj.searchParams.set("success", "1");
 
-          // window.location.href = urlObj.toString();
+          window.location.href = urlObj.toString();
           return;
         }
 
