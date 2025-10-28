@@ -20,7 +20,7 @@ function normalizeRedirectParam(raw: string | null): string | null {
   try {
     decoded = decodeURIComponent(decoded);
   } catch {
-    // se não dá decodeURIComponent sem erro, usa o raw mesmo
+    // se der erro no decodeURIComponent, usa o raw mesmo
   }
 
   return decoded;
@@ -53,7 +53,7 @@ function isDiscordRedirectParam(raw: string | null): boolean {
       return true;
     }
   } catch {
-    // não é URL válida, ignora
+    // não é URL válida -> ignora
   }
 
   return false;
@@ -78,13 +78,26 @@ function getRedirectParamLoose(req: NextRequest): string | null {
   return null;
 }
 
+// gera token randômico [a-zA-Z0-9] de N chars usando Web Crypto (Edge-safe)
+function generateToken(length: number) {
+  const alphabet =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+
+  let out = "";
+  for (let i = 0; i < length; i++) {
+    out += alphabet[bytes[i] % alphabet.length];
+  }
+  return out;
+}
+
 export function middleware(req: NextRequest) {
   const session = req.cookies.get("wzb_lg")?.value;
   const pathname = req.nextUrl.pathname;
 
   // ======================================================
   // (A) PROTEGER /app/**
-  // igual sua lógica original:
   // se tentar acessar /app/** sem "wzb_lg", manda pro /login
   // ======================================================
   if (
@@ -95,32 +108,55 @@ export function middleware(req: NextRequest) {
     if (!session) {
       const loginUrl = req.nextUrl.clone();
       loginUrl.pathname = "/login";
-      // mantém query? você não mantinha antes, então vou manter igual
       return NextResponse.redirect(loginUrl);
     }
   }
 
   // ======================================================
-  // (B) /login COM redirect -> /link/discord
-  //
-  // SEMPRE que acessar /login com um redirect apontando
-  // pra /link/discord, a gente (re)cria o cookie
-  //   wzb_postlogin_redirect = "/link/discord"
-  //
-  // Isso garante que mesmo depois do cara desvincular,
-  // se ele voltar em /login?redirect=.../link/discord
-  // o cookie volta a existir.
-  //
-  // IMPORTANTE: a gente NÃO apaga o cookie aqui se não houver redirect.
-  // A gente simplesmente não mexe nele nesses casos.
+  // (B) /login -> lidar com redirect + wzb_tk
   // ======================================================
   if (pathname === "/login") {
     const rawRedirectParam = getRedirectParamLoose(req);
     const wantsDiscord = isDiscordRedirectParam(rawRedirectParam);
 
     if (wantsDiscord) {
-      const res = NextResponse.next();
+      // se já tem wzb_tk= dentro do redirect, NÃO gera outro token
+      // (isso evita redirect infinito)
+      const alreadyHasToken =
+        typeof rawRedirectParam === "string" &&
+        rawRedirectParam.includes("wzb_tk=");
 
+      if (alreadyHasToken) {
+        const res = NextResponse.next();
+
+        // mantém seu cookie post-login
+        res.cookies.set({
+          name: "wzb_postlogin_redirect",
+          value: "/link/discord",
+          httpOnly: true,
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          path: "/",
+          maxAge: 300, // 5 minutos: login -> /dash -> /link/discord
+        });
+
+        return res;
+      }
+
+      // ainda não tem token -> gerar UMA vez só no servidor
+      const token = generateToken(50);
+
+      // monta nova URL:
+      // /login?redirect=OQUE-JA-GERA?wzb_tk=TOKEN50
+      const newUrl = req.nextUrl.clone();
+      newUrl.searchParams.set(
+        "redirect",
+        `${rawRedirectParam}?wzb_tk=${token}`
+      );
+
+      const res = NextResponse.redirect(newUrl);
+
+      // seta cookie padrão
       res.cookies.set({
         name: "wzb_postlogin_redirect",
         value: "/link/discord",
@@ -128,66 +164,29 @@ export function middleware(req: NextRequest) {
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
         path: "/",
-        maxAge: 300, // 5 minutos: login -> /dash -> /link/discord
+        maxAge: 300,
       });
 
       return res;
     }
 
-    // se NÃO é fluxo discord, não tocamos no cookie.
+    // se NÃO é fluxo discord, segue normal
     return NextResponse.next();
   }
 
   // ======================================================
-  // (C) /link/discord (ou subrotas tipo /link/discord/callback)
-  //
-  // Quando o usuário chega aqui, significa que:
-  //   - ele já fez login
-  //   - /dash já redirecionou ele pro /link/discord usando o cookie
-  //
-  // Agora o cookie "wzb_postlogin_redirect" já cumpriu a função
-  // e precisa sumir pra não poluir o próximo login normal.
-  //
-  // Então SEMPRE apagamos ele aqui.
+  // (C) /link/discord -> limpar cookie pós login
   // ======================================================
-  if (
-    pathname === "/link/discord" ||
-    pathname.startsWith("/link/discord/")
-  ) {
+  if (pathname.startsWith("/link/discord")) {
     const res = NextResponse.next();
-
-    res.cookies.set({
-      name: "wzb_postlogin_redirect",
-      value: "",
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 0, // mata o cookie
-    });
-
+    res.cookies.delete("wzb_postlogin_redirect");
     return res;
   }
 
-  // ======================================================
-  // (D) default
-  // não mexe no cookie em nenhuma outra rota
-  // ======================================================
+  // default
   return NextResponse.next();
 }
 
-// ======================================================
-// matcher
-//
-// rodamos em:
-// - /app/**           pra proteger área logada
-// - /login            pra setar (ou não) o cookie especial
-// - /link/discord/**  pra limpar o cookie
-//
-// isso faz o cookie nascer SEMPRE que for pedido fluxo discord,
-// e morrer SEMPRE que ele já chegou no /link/discord.
-// Em qualquer outro fluxo ele fica quieto.
-// ======================================================
 export const config = {
   matcher: ["/app/:path*", "/login", "/link/discord/:path*"],
 };
