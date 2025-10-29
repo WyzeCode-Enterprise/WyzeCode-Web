@@ -9,18 +9,21 @@ import crypto from "crypto";
 
 dotenv.config();
 
-// ========= SMTP CONFIG =========
+/* =========================================================
+   SMTP / E-MAIL
+========================================================= */
+
 const SMTP_USER = process.env.SMTP_USER!;
 const SMTP_PASS = process.env.SMTP_PASS!;
 const SMTP_HOST = process.env.SMTP_HOST || "smtp.hostinger.com";
 const SMTP_PORT = Number(process.env.SMTP_PORT) || 465;
 
-// sanity check
+// sanity check inicial (falha cedo = melhor que falhar só em produção)
 if (!SMTP_USER || !SMTP_PASS) {
   throw new Error("❌ Variáveis SMTP_USER ou SMTP_PASS não definidas no .env");
 }
 
-// criamos um transporter com pool pra reusar conexão
+// vamos reaproveitar conexão SMTP (pool) pra evitar lentidão em envios
 let transporter: Transporter | null = null;
 let transporterVerified = false;
 
@@ -29,16 +32,16 @@ function getMailer(): Transporter {
     transporter = nodemailer.createTransport({
       host: SMTP_HOST,
       port: SMTP_PORT,
-      secure: SMTP_PORT === 465, // SSL direto se porta 465, STARTTLS se 587 etc
+      secure: SMTP_PORT === 465, // porta 465 = SSL direto
       auth: { user: SMTP_USER, pass: SMTP_PASS },
 
-      // pooling = MUITO importante pra não demorar reconectar toda hora
+      // pooling = MUITO importante pra não reconectar a cada sendMail
       pool: true,
       maxConnections: 3,
       maxMessages: 50,
 
       tls: {
-        // alguns provedores baratos dão certificado meh
+        // alguns provedores baratos usam certificado meia-boca
         rejectUnauthorized: false,
       },
     });
@@ -55,23 +58,25 @@ async function ensureMailerReady() {
     console.log("[MAILER] SMTP verificado e pronto ✉️");
   } catch (err) {
     console.error("[MAILER] Falha ao verificar SMTP:", err);
-    // não damos throw aqui porque alguns servidores SMTP não suportam VRFY
-    // mas se falhar no sendMail depois a gente trata
+    // não damos throw aqui, alguns servidores bloqueiam VRFY
+    // se der pau depois no sendMail, a gente trata lá
   }
 }
 
-// ========= CRYPTO HELPERS PARA CPF/CNPJ =========
+/* =========================================================
+   HELPERS: CPF/CNPJ (hash, crypto AES-GCM, fingerprint)
+========================================================= */
 
-// Deriva chave AES-256 a partir do JWT_SECRET
+// chave AES-256 derivada do JWT_SECRET
 function getAesKeyFromSecret() {
   const secret = process.env.JWT_SECRET || "supersecretkey";
   return crypto.createHash("sha256").update(secret).digest(); // 32 bytes
 }
 
-// Criptografa doc puro -> "ivBase64:cipherBase64:tagBase64"
+// criptografa doc puro -> "ivBase64:cipherBase64:tagBase64"
 function encryptCpfCnpjAES(plainDoc: string): string {
   const key = getAesKeyFromSecret();
-  const iv = crypto.randomBytes(12); // recomendado p/ GCM (96 bits)
+  const iv = crypto.randomBytes(12); // 96 bits p/ GCM
 
   const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
   const encrypted = Buffer.concat([
@@ -87,7 +92,18 @@ function encryptCpfCnpjAES(plainDoc: string): string {
   ].join(":");
 }
 
-// ========= OUTROS HELPERS =========
+// fingerprint estável (sha256 + pepper). usado pra UNIQUE no banco
+function cpfCnpjFingerprint(cpfCnpjRaw: string): string {
+  const pepper = process.env.CPF_CNPJ_PEPPER || "wyze_default_pepper_change_me";
+  const digits = cpfCnpjRaw.replace(/\D/g, "");
+  const h = createHash("sha256");
+  h.update(pepper + digits);
+  return h.digest("hex");
+}
+
+/* =========================================================
+   HELPERS DE VALIDAÇÃO E NORMALIZAÇÃO
+========================================================= */
 
 const validDDDs = [
   "11","12","13","14","15","16","17","18","19",
@@ -122,7 +138,7 @@ function namesEqual(a: string, b: string): boolean {
   return normalizeNameStrict(a) === normalizeNameStrict(b);
 }
 
-// Validação PF mínima
+// Validação PF mínima (placeholder de antifraude básico)
 async function validatePF_Strict(
   cpf: string,
   nomeInformado: string
@@ -135,6 +151,7 @@ async function validatePF_Strict(
     };
   }
 
+  // exige pelo menos nome + sobrenome
   const partesValidas = nomeInformado
     .trim()
     .split(/\s+/)
@@ -149,6 +166,7 @@ async function validatePF_Strict(
   }
 
   const digits = cpf.replace(/\D/g, "");
+  // bloqueia óbvios CPFs inválidos (11111111111 etc)
   if (/^(\d)\1+$/.test(digits)) {
     return {
       ok: false,
@@ -157,9 +175,11 @@ async function validatePF_Strict(
     };
   }
 
+  // aqui poderia entrar checagem de idade/receita/etc se quiser depois
   return { ok: true };
 }
 
+// normaliza para formato +5511999999999
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   return digits.startsWith("55") ? "+" + digits : "+55" + digits;
@@ -167,6 +187,7 @@ function normalizePhone(phone: string): string {
 
 async function isValidPhone(phone: string) {
   const normalized = normalizePhone(phone);
+  // formato: +55DD9XXXXXXXX (11 dígitos após DDD)
   const brRegex = /^\+55\d{2}9\d{8}$/;
   if (!brRegex.test(normalized)) return false;
 
@@ -180,16 +201,18 @@ async function isValidPhone(phone: string) {
   return true;
 }
 
-// consulta CNPJ público
+// Valida CNPJ por API pública simples + match de razão social
 async function validateCNPJWithName(cnpj: string, razao: string) {
   const digits = cnpj.replace(/\D/g, "");
   const resp = await fetch(`https://publica.cnpj.ws/cnpj/${digits}`);
   if (!resp.ok) return false;
   const data = await resp.json();
   if (!data?.razao_social) return false;
+  // não precisa bater 100%, mas precisa conter
   return data.razao_social.toLowerCase().includes(razao.toLowerCase());
 }
 
+// valida estrutura e dígitos verificadores CPF
 function isValidCPF(cpf: string): boolean {
   cpf = cpf.replace(/\D/g, "");
   if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false;
@@ -208,6 +231,7 @@ function isValidCPF(cpf: string): boolean {
   return rev === parseInt(cpf[10]);
 }
 
+// valida estrutura e dígitos verificadores CNPJ
 function isValidCNPJ(cnpj: string): boolean {
   cnpj = cnpj.replace(/\D/g, "");
   if (cnpj.length !== 14 || /^(\d)\1+$/.test(cnpj)) return false;
@@ -218,8 +242,8 @@ function isValidCNPJ(cnpj: string): boolean {
   const d2 = parseInt(d[1]);
 
   const calc = (x: number) => {
-    let n = 0,
-      pos = x - 7;
+    let n = 0;
+    let pos = x - 7;
     for (let i = x; i >= 1; i--) {
       n += parseInt(cnpj[x - i]) * pos--;
       if (pos < 2) pos = 9;
@@ -230,14 +254,17 @@ function isValidCNPJ(cnpj: string): boolean {
   return calc(12) === d1 && calc(13) === d2;
 }
 
+// política mínima de senha
 function isValidPassword(pw: string): boolean {
   return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\da-zA-Z]).{8,}$/.test(pw);
 }
 
+// OTP 6 dígitos
 function generateOTP() {
   return randomInt(100000, 999999).toString();
 }
 
+// pra log bonito no e-mail
 function parseUserAgentFriendly(ua: string | null): string {
   if (!ua) return "Desconhecido";
   const u = ua.toLowerCase();
@@ -260,16 +287,7 @@ function parseUserAgentFriendly(ua: string | null): string {
   return `${browser} (${os})`;
 }
 
-function cpfCnpjFingerprint(cpfCnpjRaw: string): string {
-  const pepper =
-    process.env.CPF_CNPJ_PEPPER || "wyze_default_pepper_change_me";
-  const digits = cpfCnpjRaw.replace(/\D/g, "");
-  const h = createHash("sha256");
-  h.update(pepper + digits);
-  return h.digest("hex");
-}
-
-// garante que não existe outro user com mesmo phone/cpf
+// checa unicidade (telefone / documento) antes de cadastrar
 async function assertUniqueIdentity(
   phoneRaw: string,
   cpfCnpjRaw: string,
@@ -278,6 +296,7 @@ async function assertUniqueIdentity(
   const normalizedPhone = normalizePhone(phoneRaw);
   const fingerprint = cpfCnpjFingerprint(cpfCnpjRaw);
 
+  // telefone já existe?
   const [samePhone] = await db.query(
     "SELECT id FROM users WHERE phone=? LIMIT 1",
     [normalizedPhone]
@@ -286,6 +305,7 @@ async function assertUniqueIdentity(
     throw new Error("Este número de telefone já está cadastrado.");
   }
 
+  // fingerprint do doc já existe?
   const [sameDocFast] = await db.query(
     "SELECT id FROM users WHERE cpf_cnpj_fingerprint=? LIMIT 1",
     [fingerprint]
@@ -294,6 +314,7 @@ async function assertUniqueIdentity(
     throw new Error("Este CPF/CNPJ já está cadastrado.");
   }
 
+  // fallback legado com bcrypt no campo cpf_or_cnpj (caso você tenha base antiga)
   if (withBcryptFallback) {
     const digitsOnly = cpfCnpjRaw.replace(/\D/g, "");
     const [rows] = await db.query("SELECT id, cpf_or_cnpj FROM users");
@@ -305,10 +326,26 @@ async function assertUniqueIdentity(
   }
 }
 
-// ========= HANDLER PRINCIPAL =========
+// helper de data MySQL "YYYY-MM-DD HH:MM:SS.mmm"
+function toMySQLDateTime(d: Date) {
+  const pad = (n: number, len = 2) => n.toString().padStart(len, "0");
+  const yyyy = d.getFullYear();
+  const MM = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+  const ss = pad(d.getSeconds());
+  const ms = pad(d.getMilliseconds(), 3);
+  return `${yyyy}-${MM}-${dd} ${hh}:${mm}:${ss}.${ms}`;
+}
+
+/* =========================================================
+   HANDLER PRINCIPAL (POST /api/register)
+========================================================= */
 
 export async function POST(req: NextRequest) {
   try {
+    // body esperado
     const { email, nome, telefone, cpfCnpj, password, otp: otpUser } =
       await req.json();
 
@@ -319,30 +356,32 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // captura IP / User-Agent
+    // captura IP / User-Agent do request reverso/reverso CDN/etc
     const xf = req.headers.get("x-forwarded-for");
-    const ip = xf
-      ? xf.split(",")[0].trim()
-      : req.headers.get("cf-connecting-ip") ||
-        req.headers.get("fastly-client-ip") ||
-        (req as any).ip ||
-        "unknown";
+    const ip =
+      (xf ? xf.split(",")[0].trim() : null) ||
+      req.headers.get("cf-connecting-ip") ||
+      req.headers.get("fastly-client-ip") ||
+      (req as any).ip ||
+      "unknown";
 
     const userAgent = req.headers.get("user-agent") || "";
     const friendlyBrowser = parseUserAgentFriendly(userAgent);
 
-    // 1. valida tel rápido
+    /* ---------------------------------
+       1. valida telefone
+    --------------------------------- */
     const phoneOk = await isValidPhone(telefone);
     if (!phoneOk) {
       return NextResponse.json(
-        {
-          error: "Número de Telefone inválido. (ex: +55 11 99999-9999)",
-        },
+        { error: "Número de Telefone inválido. (ex: +55 11 99999-9999)" },
         { status: 400 }
       );
     }
 
-    // 2. detecta PF/PJ e valida doc
+    /* ---------------------------------
+       2. valida CPF/CNPJ + nome
+    --------------------------------- */
     const digitsOnly = cpfCnpj.replace(/\D/g, "");
     const isPF = digitsOnly.length <= 11;
 
@@ -356,17 +395,13 @@ export async function POST(req: NextRequest) {
         switch (pf.reason) {
           case "NAME_MISMATCH":
             return NextResponse.json(
-              {
-                error: "Informe seu nome completo (nome e sobrenome).",
-              },
+              { error: "Informe seu nome completo (nome e sobrenome)." },
               { status: 400 }
             );
           case "NO_DATA":
           default:
             return NextResponse.json(
-              {
-                error: "Dados pessoais inválidos ou incompletos.",
-              },
+              { error: "Dados pessoais inválidos ou incompletos." },
               { status: 400 }
             );
         }
@@ -386,7 +421,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. requisito mínimo de senha
+    /* ---------------------------------
+       3. valida senha
+    --------------------------------- */
     if (!isValidPassword(password)) {
       return NextResponse.json(
         {
@@ -397,93 +434,106 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. anti-duplicidade (rápido)
+    /* ---------------------------------
+       4. anti-duplicidade rápida
+    --------------------------------- */
     try {
       await assertUniqueIdentity(telefone, cpfCnpj);
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
 
-    // Busca OTP mais recente já guardado pra esse email
+    /* ---------------------------------
+       Buscar último OTP desse e-mail
+    --------------------------------- */
     const [existing] = await db.query(
       "SELECT * FROM otp_codes WHERE email=? ORDER BY created_at DESC LIMIT 1",
       [email]
     );
     const lastOtp = (existing as any)[0];
 
-    // ========== FASE 1: gerar e mandar o email ==========
+    /* ---------------------------------
+       FASE 1: gerar e enviar OTP (se ainda não recebi otpUser)
+    --------------------------------- */
     if (!otpUser) {
-      // gera otp e pré-salva infos em otp_codes
       const otp = generateOTP();
-      const expireAt = new Date(Date.now() + 10 * 60 * 1000); // 10min
+      const expireAt = new Date(Date.now() + 10 * 60 * 1000); // agora +10min
+      const expireAtStr = toMySQLDateTime(expireAt);
+
       const normalizedPhone = normalizePhone(telefone);
 
       const onlyDigits = cpfCnpj.replace(/\D/g, "");
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const hashedCpfCnpj = await bcrypt.hash(onlyDigits, 10);
-      const fingerprint = cpfCnpjFingerprint(onlyDigits);
+      const hashedPassword = await bcrypt.hash(password, 10); // senha bcrypt
+      const hashedCpfCnpj = await bcrypt.hash(onlyDigits, 10); // doc bcrypt
+      const fingerprint = cpfCnpjFingerprint(onlyDigits); // doc fingerprint estável
 
+      // Se já existe otp_codes "pending" pra esse email, atualiza.
+      // MUITO IMPORTANTE: manter a ORDEM das colunas e dos valores alinhada.
       if (lastOtp && lastOtp.status === "pending") {
-        // UPDATE otp_codes existente
         await db.query(
           `UPDATE otp_codes
-            SET otp=?,
-                expires_at=?,
-                nome=?,
-                telefone=?,
-                cpf_cnpj=?,
-                cpf_cnpj_fingerprint=?,
-                password_hash=?,
-                ip=?,
-                user_agent=?
-          WHERE id=?`,
+             SET
+               nome=?,
+               telefone=?,
+               cpf_cnpj=?,                -- bcrypt do doc
+               cpf_cnpj_fingerprint=?,    -- sha256 fingerprint
+               plain_doc_digits=?,        -- doc puro só dígitos
+               password_hash=?,           -- bcrypt senha
+               otp=?,                     -- novo código OTP
+               expires_at=?,              -- nova expiração
+               ip=?,
+               user_agent=?
+           WHERE id=?`,
           [
-            otp,
-            expireAt,
             nome,
             normalizedPhone,
-            hashedCpfCnpj,          // bcrypt
-            fingerprint,            // sha256 pepper
-            hashedPassword,         // bcrypt senha
-            onlyDigits,             // CPF/CNPJ puro (só dígitos)
+            hashedCpfCnpj,
+            fingerprint,
+            onlyDigits,
+            hashedPassword,
+            otp,
+            expireAtStr,
             ip,
             userAgent,
             lastOtp.id,
           ]
         );
       } else {
-        // INSERT novo otp_codes
+        // cria um novo otp_codes
+        // IMPORTANTE: agora a lista de colunas bate EXATAMENTE com os valores
         await db.query(
-          `INSERT INTO otp_codes
-            (email,
+          `INSERT INTO otp_codes (
+             email,
              nome,
              telefone,
              cpf_cnpj,
              cpf_cnpj_fingerprint,
+             plain_doc_digits,
              password_hash,
              otp,
              expires_at,
              status,
              ip,
-             user_agent)
+             user_agent
+           )
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
           [
-            email,
-            nome,
-            normalizedPhone,
-            hashedCpfCnpj,      // bcrypt
-            fingerprint,        // sha256 pepper
-            hashedPassword,     // bcrypt senha
-            onlyDigits,         // CPF/CNPJ puro
-            otp,
-            expireAt,
-            ip,
-            userAgent,
+            email,            // email
+            nome,             // nome
+            normalizedPhone,  // telefone normalizado
+            hashedCpfCnpj,    // cpf_cnpj (bcrypt do doc)
+            fingerprint,      // cpf_cnpj_fingerprint (sha256 pepper)
+            onlyDigits,       // plain_doc_digits (doc puro p/ depois criar user)
+            hashedPassword,   // password_hash (bcrypt senha)
+            otp,              // otp gerado
+            expireAtStr,      // expires_at
+            ip,               // ip
+            userAgent,        // user_agent bruto
           ]
         );
       }
 
-      // prepara corpo do e-mail
+      // monta corpo do e-mail HTML
       const emailBody = htmlMailTemplate
         .replace(/{{OTP}}/g, otp)
         .replace(/{{NOME}}/g, nome)
@@ -495,10 +545,10 @@ export async function POST(req: NextRequest) {
           "Use o código abaixo para continuar o processo de criação de sua conta Wyze Bank."
         );
 
-      // garante transporter pronto
+      // valida transporter
       await ensureMailerReady();
 
-      // tenta enviar
+      // envia e-mail
       try {
         const info = await getMailer().sendMail({
           from: `"Wyze Bank" <${SMTP_USER}>`,
@@ -529,7 +579,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ========== FASE 2: validar OTP recebido e criar user ==========
+    /* ---------------------------------
+       FASE 2: validar OTP recebido e criar usuário
+    --------------------------------- */
+
     if (!lastOtp) {
       return NextResponse.json(
         { error: "Nenhum OTP encontrado. Gere um novo código." },
@@ -551,21 +604,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (lastOtp.otp !== otpUser) {
+    if (String(lastOtp.otp) !== String(otpUser)) {
       return NextResponse.json(
         { error: "Código incorreto." },
         { status: 400 }
       );
     }
 
-    // double-check duplicidade antes de criar usuário definitivo
+    // double-check duplicidade ANTES de criar user de fato
     try {
-      await assertUniqueIdentity(lastOtp.telefone, lastOtp.cpf_cnpj);
+      await assertUniqueIdentity(lastOtp.telefone, lastOtp.plain_doc_digits);
       const [fastCheck] = await db.query(
         "SELECT id FROM users WHERE phone=? OR cpf_cnpj_fingerprint=? LIMIT 1",
         [normalizePhone(lastOtp.telefone), lastOtp.cpf_cnpj_fingerprint]
       );
       if ((fastCheck as any).length > 0) {
+        // marca esse OTP como bloqueado pra não reusar
         await db.query(`UPDATE otp_codes SET status='blocked' WHERE id=?`, [
           lastOtp.id,
         ]);
@@ -582,14 +636,12 @@ export async function POST(req: NextRequest) {
     }
 
     // marca OTP como validado
-    await db.query(
-      `UPDATE otp_codes SET status='validated' WHERE id=?`,
-      [lastOtp.id]
-    );
+    await db.query(`UPDATE otp_codes SET status='validated' WHERE id=?`, [
+      lastOtp.id,
+    ]);
 
-    // cria user final
+    // agora cria o usuário final
     try {
-      // documento puro que salvamos na fase 1 (onlyDigits)
       const originalDigits =
         lastOtp.plain_doc_digits &&
         String(lastOtp.plain_doc_digits).replace(/\D/g, "");
@@ -604,7 +656,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // criptografa esse doc com AES-256-GCM usando JWT_SECRET
+      // criptografa doc puro antes de salvar no users
       const encryptedDoc = encryptCpfCnpjAES(originalDigits);
 
       await db.query(
@@ -624,7 +676,7 @@ export async function POST(req: NextRequest) {
           lastOtp.password_hash,
           lastOtp.nome,
           normalizePhone(lastOtp.telefone),
-          encryptedDoc, // <<----- agora é cifrado AES, não bcrypt
+          encryptedDoc, // cpf_or_cnpj: armazenado cifrado AES
           lastOtp.cpf_cnpj_fingerprint,
         ]
       );
@@ -638,7 +690,7 @@ export async function POST(req: NextRequest) {
       throw e;
     }
 
-    // final
+    // sucesso 🎉
     return NextResponse.json({
       success: true,
       message: "Conta criada com sucesso",
