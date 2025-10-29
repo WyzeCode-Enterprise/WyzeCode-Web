@@ -15,6 +15,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
+/* =========================================================
+   HOOK: detectar mobile (pra abrir drawer bottom vs right)
+========================================================= */
 function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState(false);
 
@@ -31,6 +34,7 @@ function useIsMobile() {
       mq.addEventListener("change", handler);
       return () => mq.removeEventListener("change", handler);
     } else {
+      // fallback pra Safari antigo
       mq.addListener(handler as any);
       return () => mq.removeListener(handler as any);
     }
@@ -39,6 +43,9 @@ function useIsMobile() {
   return isMobile;
 }
 
+/* =========================================================
+   LOCALSTORAGE KEYS / HELPERS
+========================================================= */
 const FRONT_KEY = "wzb_dcmp_mf";
 const BACK_KEY = "wzb_dcmp_mb";
 
@@ -57,10 +64,7 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
-function saveImagesToLocalStorage(
-  frontB64: string | null,
-  backB64: string | null
-) {
+function saveImagesToLocalStorage(frontB64: string | null, backB64: string | null) {
   if (typeof window === "undefined") return;
   try {
     if (frontB64) {
@@ -113,6 +117,9 @@ function removeBackFromLocalStorage() {
   }
 }
 
+/* =========================================================
+   BARRA AMARELA "PENDENTE"
+========================================================= */
 export function AlertPending({
   onVerify,
   className,
@@ -120,74 +127,77 @@ export function AlertPending({
   onVerify?: () => void;
   className?: string;
 }) {
-return (
-  <section
-    className={[
-      "relative w-full rounded-md border border-yellow-400/30 bg-[#050505] p-4 sm:p-5",
-      "dark:border-yellow-400/30 dark:bg-[#1a1a1a]/60",
-      className || "",
-    ].join(" ")}
-  >
-
-    <div className="flex flex-col gap-4 sm:gap-1 text-left sm:pr-40">
-      <div className="flex flex-col gap-1 text-left sm:pr-40">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center rounded-full border border-yellow-400/40 bg-yellow-500/10 px-2 py-[3px] text-[11px] font-medium leading-none text-yellow-400">
-            Ação necessária
-          </span>
-
-          <span className="text-[11px] leading-none font-semibold text-yellow-400">
-            Verificação pendente
-          </span>
-        </div>
-
-        <div className="mt-2 text-[16px] font-semibold leading-snug text-yellow-200 sm:text-[17px]">
-          Você ainda precisa verificar seus documentos
-        </div>
-
-        <p className="max-w-[120ch] text-[13px] leading-relaxed text-yellow-200/70 sm:text-[14px]">
-          Valide seu documento e sua idade para ativar o Wyze Bank. Sem essa
-          etapa, sua conta permanece limitada ao Wyze Bank Pay e fica sujeita a
-          limites de uso e possível retenção de saldo.
-        </p>
-      </div>
-
-      <div className="sm:hidden">
-        <button
-          type="button"
-          onClick={onVerify}
-          className={[
-            "w-full inline-flex cursor-pointer items-center justify-center rounded-md",
-            "bg-yellow-400 px-6 py-2 text-[13px] font-semibold text-black",
-            "hover:bg-yellow-300 active:scale-[0.99]",
-            "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0",
-            "transition-all",
-          ].join(" ")}
-        >
-          Verificar documentos
-        </button>
-      </div>
-    </div>
-
-    <button
-      type="button"
-      onClick={onVerify}
-      className={[
-        "hidden sm:inline-flex",
-        "absolute bottom-4 right-4",
-        "cursor-pointer items-center justify-center rounded-md",
-        "bg-yellow-400 px-6 py-2 text-[13px] font-semibold text-black",
-        "hover:bg-yellow-300 active:scale-[0.99]",
-        "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0",
-        "transition-all",
-      ].join(" ")}
+  return (
+    <section
+      className={cn(
+        "relative w-full rounded-md border border-yellow-400/30 bg-[#050505] p-4 sm:p-5",
+        "dark:border-yellow-400/30 dark:bg-[#1a1a1a]/60",
+        className
+      )}
     >
-      Verificar documentos
-    </button>
-  </section>
-);
+      <div className="flex flex-col gap-4 sm:gap-1 text-left sm:pr-40">
+        <div className="flex flex-col gap-1 text-left sm:pr-40">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex items-center rounded-full border border-yellow-400/40 bg-yellow-500/10 px-2 py-[3px] text-[11px] font-medium leading-none text-yellow-400">
+              1° Etapa pendente
+            </span>
+
+            <span className="text-[11px] leading-none font-semibold text-yellow-400">
+              Verificação pendente
+            </span>
+          </div>
+
+          <div className="mt-2 text-[16px] font-semibold leading-snug text-yellow-200 sm:text-[17px]">
+            Você ainda precisa verificar seus documentos
+          </div>
+
+          <p className="max-w-[120ch] text-[13px] leading-relaxed text-yellow-200/70 sm:text-[14px]">
+            Valide seu documento e sua idade para ativar o Wyze Bank. Sem essa
+            etapa, sua conta permanece limitada ao Wyze Bank Pay e fica sujeita a
+            limites de uso e possível retenção de saldo.
+          </p>
+        </div>
+
+        <div className="sm:hidden">
+          <button
+            type="button"
+            onClick={onVerify}
+            className={cn(
+              "w-full inline-flex cursor-pointer items-center justify-center rounded-md",
+              "bg-yellow-400 px-6 py-2 text-[13px] font-semibold text-black",
+              "hover:bg-yellow-300 active:scale-[0.99]",
+              "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0",
+              "transition-all"
+            )}
+          >
+            Verificar documentos
+          </button>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onVerify}
+        className={cn(
+          "hidden sm:inline-flex",
+          "absolute bottom-4 right-4",
+          "cursor-pointer items-center justify-center rounded-md",
+          "bg-yellow-400 px-6 py-2 text-[13px] font-semibold text-black",
+          "hover:bg-yellow-300 active:scale-[0.99]",
+          "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0",
+          "transition-all"
+        )}
+      >
+        Verificar documentos
+      </button>
+    </section>
+  );
 }
 
+/* =========================================================
+   MODAL DE UPLOAD (frente / verso)
+   -> NÃO tem nada de QR aqui
+========================================================= */
 function UploadModal({
   open,
   onClose,
@@ -206,6 +216,7 @@ function UploadModal({
   const [frontPreview, setFrontPreview] = React.useState<string | null>(null);
   const [backPreview, setBackPreview] = React.useState<string | null>(null);
 
+  // quando abrir modal, carrega previews iniciais
   React.useEffect(() => {
     if (open) {
       setFrontPreview(initialFrontB64 || null);
@@ -215,6 +226,7 @@ function UploadModal({
     }
   }, [open, initialFrontB64, initialBackB64]);
 
+  // preview da frente
   React.useEffect(() => {
     if (frontFile) {
       const url = URL.createObjectURL(frontFile);
@@ -222,6 +234,7 @@ function UploadModal({
     }
   }, [frontFile]);
 
+  // preview do verso
   React.useEffect(() => {
     if (backFile) {
       const url = URL.createObjectURL(backFile);
@@ -241,19 +254,15 @@ function UploadModal({
       finalFrontB64 = await fileToBase64(frontFile);
     } else if (initialFrontB64) {
       finalFrontB64 = initialFrontB64;
-    } else {
-      finalFrontB64 = null;
     }
 
     if (backFile) {
       finalBackB64 = await fileToBase64(backFile);
     } else if (initialBackB64) {
       finalBackB64 = initialBackB64;
-    } else {
-      finalBackB64 = null;
     }
 
-    onConfirm(finalFrontB64, finalBackB64);
+    onConfirm(finalFrontB64 || null, finalBackB64 || null);
   }
 
   return (
@@ -267,12 +276,11 @@ function UploadModal({
         className={cn(
           "flex w-full max-w-[800px] flex-col gap-4 rounded-md border border-neutral-800 bg-[#0a0a0a] p-5 shadow-xl"
         )}
-
         onMouseDown={(e) => {
+          // não fechar clicando dentro da caixa
           e.stopPropagation();
         }}
       >
-
         <div className="flex flex-col gap-1">
           <div className="text-[20px] font-semibold text-foreground">
             Enviar documento
@@ -283,6 +291,7 @@ function UploadModal({
           </div>
         </div>
 
+        {/* Frente */}
         <div className="flex flex-col gap-2">
           <div className="text-[16px] font-medium text-foreground">
             Frente do documento
@@ -330,6 +339,7 @@ function UploadModal({
           </label>
         </div>
 
+        {/* Verso */}
         <div className="flex flex-col gap-2">
           <div className="text-[16px] font-medium text-foreground">
             Verso do documento
@@ -402,6 +412,9 @@ function UploadModal({
   );
 }
 
+/* =========================================================
+   DRAWER PRINCIPAL DE VERIFICAÇÃO
+========================================================= */
 function VerifyDocumentsDrawer({
   open,
   onOpenChange,
@@ -414,17 +427,24 @@ function VerifyDocumentsDrawer({
     email: string;
     cpfOrCnpj: string;
     phone: string;
+    // idealmente user.id também viria aqui
   };
 }) {
   const isMobile = useIsMobile();
 
-  const [frontConfirmed, setFrontConfirmed] = React.useState<string | null>(
-    null
-  );
+  // imagens confirmadas pelo usuário
+  const [frontConfirmed, setFrontConfirmed] = React.useState<string | null>(null);
   const [backConfirmed, setBackConfirmed] = React.useState<string | null>(null);
 
+  // modal upload
   const [uploadModalOpen, setUploadModalOpen] = React.useState(false);
 
+  // QR selfie
+  const [qrUrl, setQrUrl] = React.useState<string | null>(null);
+  const [qrLoading, setQrLoading] = React.useState(false);
+  const [qrError, setQrError] = React.useState<string | null>(null);
+
+  // carrega docs salvos localmente quando o drawer abre
   React.useEffect(() => {
     if (!open) return;
     const { front, back } = loadImagesFromLocalStorage();
@@ -432,52 +452,84 @@ function VerifyDocumentsDrawer({
     if (back) setBackConfirmed(back);
   }, [open]);
 
-  function handleConfirmUpload(
-    finalFrontB64: string | null,
-    finalBackB64: string | null
-  ) {
+  // gera (ou recupera) URL única do QR quando o drawer abre
+  React.useEffect(() => {
+    async function prepareQR() {
+      if (!open) return;
+
+      // já temos QR? não faz nada
+      if (qrUrl) return;
+
+      try {
+        setQrLoading(true);
+        setQrError(null);
+
+        // TODO: trocar 1 pelo userId real autenticado
+        const resp = await fetch("/api/qrface", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: 1, // <--- troque isso pelo ID real do usuário logado
+          }),
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          setQrError(data.error || "Erro ao gerar QR Code.");
+          setQrLoading(false);
+          return;
+        }
+
+        setQrUrl(data.url || null);
+        setQrLoading(false);
+      } catch (err: any) {
+        setQrError("Erro de rede ao gerar QR Code.");
+        setQrLoading(false);
+      }
+    }
+
+    prepareQR();
+  }, [open, qrUrl]);
+
+  // callback quando confirma upload
+  function handleConfirmUpload(finalFrontB64: string | null, finalBackB64: string | null) {
     setFrontConfirmed(finalFrontB64);
     setBackConfirmed(finalBackB64);
-
     saveImagesToLocalStorage(finalFrontB64, finalBackB64);
-
     setUploadModalOpen(false);
   }
 
-  // abrir modal
   function handleOpenUploadModal() {
     setUploadModalOpen(true);
   }
 
-  // fechar modal
   function handleCloseUploadModal() {
     setUploadModalOpen(false);
   }
 
-  // remover frente
   function handleRemoveFront(e: React.MouseEvent) {
-    e.stopPropagation(); // não tentar reabrir modal
+    e.stopPropagation();
     setFrontConfirmed(null);
     removeFrontFromLocalStorage();
   }
 
-  // remover verso
   function handleRemoveBack(e: React.MouseEvent) {
     e.stopPropagation();
     setBackConfirmed(null);
     removeBackFromLocalStorage();
   }
 
-  // enviar documento final
+  // enviar documento final (a parte server-side você faz depois)
   function handleSubmitDocument() {
     console.log("Enviar documento:", {
       frontConfirmed,
       backConfirmed,
+      qrUrl,
     });
-    // depois você faz fetch("/api/pending-v", { ... })
   }
 
-  // impedir drawer fechar se o modal interno está aberto
+  // impede fechar o Drawer se o modal interno estiver aberto
   function handleDrawerOpenChange(next: boolean) {
     if (!next && uploadModalOpen) {
       return;
@@ -485,7 +537,7 @@ function VerifyDocumentsDrawer({
     onOpenChange(next);
   }
 
-  // dados do usuário vindos do servidor
+  // dados do usuário
   const name = user?.name || "Usuário";
   const cpfOrCnpj = user?.cpfOrCnpj || "—";
   const email = user?.email || "indisponível@wyzebank.com";
@@ -493,7 +545,7 @@ function VerifyDocumentsDrawer({
 
   return (
     <>
-      {/* Modal sobreposto */}
+      {/* Modal de upload frente/verso */}
       <UploadModal
         open={uploadModalOpen}
         onClose={handleCloseUploadModal}
@@ -502,11 +554,7 @@ function VerifyDocumentsDrawer({
         initialBackB64={backConfirmed}
       />
 
-      <Drawer
-        open={open}
-        onOpenChange={handleDrawerOpenChange}
-        direction={isMobile ? "bottom" : "right"}
-      >
+      <Drawer open={open} onOpenChange={handleDrawerOpenChange} direction={isMobile ? "bottom" : "right"}>
         <DrawerContent
           className={cn(
             "group/drawer-content bg-background fixed z-50 flex h-auto flex-col",
@@ -531,11 +579,9 @@ function VerifyDocumentsDrawer({
           </DrawerHeader>
 
           <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-4 text-sm sm:px-6">
-            {/* DADOS PESSOAIS (2x2) */}
+            {/* DADOS PESSOAIS */}
             <div className="grid gap-4 text-[13px] leading-relaxed">
-              {/* linha 1: Nome / CPF ou CNPJ */}
               <div className="grid grid-cols-2 gap-4">
-                {/* Nome */}
                 <div className="flex flex-col gap-2">
                   <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Nome completo
@@ -543,11 +589,10 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={name}
-                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default user-none"
+                    className="w-full cursor-default rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none"
                   />
                 </div>
 
-                {/* CPF/CNPJ */}
                 <div className="flex flex-col gap-2">
                   <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     CPF / CNPJ
@@ -555,14 +600,12 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={cpfOrCnpj}
-                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default user-none"
+                    className="w-full cursor-default rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none"
                   />
                 </div>
               </div>
 
-              {/* linha 2: E-mail / Telefone */}
               <div className="grid grid-cols-2 gap-4">
-                {/* Email */}
                 <div className="flex flex-col gap-2">
                   <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     E-mail
@@ -570,11 +613,10 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={email}
-                    className="w-full break-all rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default user-none"
+                    className="w-full cursor-default break-all rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none"
                   />
                 </div>
 
-                {/* Telefone */}
                 <div className="flex flex-col gap-2">
                   <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Telefone
@@ -582,7 +624,7 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={phone}
-                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default user-none"
+                    className="w-full cursor-default rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none"
                   />
                 </div>
               </div>
@@ -601,7 +643,6 @@ function VerifyDocumentsDrawer({
                 você pode reenviar.
               </div>
 
-              {/* cartão clicável, mas NÃO é <button> pra evitar nested button */}
               <div
                 role="button"
                 tabIndex={0}
@@ -700,16 +741,63 @@ function VerifyDocumentsDrawer({
 
             <Separator />
 
-            {/* aviso legal */}
-            <div className="rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3">
-              <p className="text-[13px] font-medium leading-relaxed text-yellow-400">
-                Importante
-              </p>
-              <p className="text-[12px] leading-relaxed text-yellow-200/80">
-                Seu documento é usado apenas para validação da conta e
-                prevenção a fraude. Seus dados são criptografados e nunca ficam
-                públicos.
-              </p>
+            {/* SELFIE / PROVA DE VIDA VIA QRCODE */}
+            <div className="grid gap-2 pt-2">
+              <div className="text-[16px] font-medium text-foreground">
+                Selfie de verificação
+              </div>
+
+              <div className="text-[14px] leading-snug text-muted-foreground">
+                Agora precisamos confirmar que você é realmente você. Aponte a câmera
+                do seu celular para o QR abaixo e siga as instruções para validar seu
+                rosto em tempo real.
+              </div>
+
+              <div
+                className={cn(
+                  "flex flex-col items-center justify-center",
+                  "rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40",
+                  "px-4 py-8 text-center transition-colors",
+                  "hover:border-neutral-500/80 hover:bg-neutral-900/40"
+                )}
+              >
+                <div className="relative flex h-[200px] w-[200px] items-center justify-center rounded-md bg-white">
+                  {qrLoading ? (
+                    <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[11px] font-semibold text-neutral-400 ring-1 ring-border">
+                      Gerando QR...
+                    </div>
+                  ) : qrError ? (
+                    <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-center text-[11px] font-semibold text-red-400 ring-1 ring-border px-4 leading-relaxed">
+                      {qrError}
+                    </div>
+                  ) : qrUrl ? (
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+                        qrUrl
+                      )}`}
+                      alt="QR code para verificação facial"
+                      className="w-[190px] h-[190px] rounded-md ring-border bg-white object-contain"
+                    />
+                  ) : (
+                    <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[10px] font-semibold text-neutral-400 ring-1 ring-border">
+                      QR CODE
+                    </div>
+                  )}
+                </div>
+
+                {/* legenda opcional */}
+                {/* <div className="mt-4 text-[13px] leading-relaxed text-muted-foreground">
+                  Escaneie com a câmera do celular.
+                  <br />
+                  Basta seguir as instruções na tela.
+                </div> */}
+              </div>
+
+              <div className="text-[13px] leading-relaxed text-muted-foreground">
+                • Garanta boa iluminação e seu rosto totalmente visível.
+                <br />
+                • Não utilize óculos escuros, máscara ou boné cobrindo o rosto.
+              </div>
             </div>
           </div>
 
@@ -743,10 +831,9 @@ function VerifyDocumentsDrawer({
   );
 }
 
-/* -------------------------------------------------
-   Wrapper que controla open/close
-   => usar no /dash
--------------------------------------------------- */
+/* =========================================================
+   WRAPPER USADO NO /dash
+========================================================= */
 export function VerifyDocumentsSection({
   user,
 }: {

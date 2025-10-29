@@ -544,72 +544,105 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
     </>
   )}
 
-            {forgotStep === "otp" && (
-              <div className="flex flex-col gap-4 mt-2 items-center w-full">
-                <Field>
-                  <FieldLabel htmlFor="forgot-otp" className="sr-only">
-                    Código OTP
-                  </FieldLabel>
+{forgotStep === "otp" && (
+  <div className="flex flex-col gap-4 mt-2 w-full">
 
-                  <InputOTP
-                    maxLength={6}
-                    id="forgot-otp"
-                    value={forgotOtp}
-                    onChange={(value: string) => setForgotOtp(value)}
-                    containerClassName="gap-4 w-full justify-center"
-                  >
-                    <InputOTPGroup className="gap-2.5 *:data-[slot=input-otp-slot]:h-16 *:data-[slot=input-otp-slot]:w-12 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border *:data-[slot=input-otp-slot]:text-xl">
-                      <InputOTPSlot index={0} />
-                      <InputOTPSlot index={1} />
-                      <InputOTPSlot index={2} />
-                    </InputOTPGroup>
-                    <InputOTPSeparator />
-                    <InputOTPGroup className="gap-2.5 *:data-[slot=input-otp-slot]:h-16 *:data-[slot=input-otp-slot]:w-12 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border *:data-[slot=input-otp-slot]:text-xl">
-                      <InputOTPSlot index={3} />
-                      <InputOTPSlot index={4} />
-                      <InputOTPSlot index={5} />
-                    </InputOTPGroup>
-                  </InputOTP>
+    {/* header com input de email e botão voltar */}
+    <div className="relative flex flex-col">
+      {/* input email bloqueado (mostra pra qual email o código foi enviado) */}
+      <Input
+        id="forgot-email-readonly"
+        type="text"
+        value={forgotEmail}
+        disabled
+        className={cn(
+          "bg-[#020202] text-foreground placeholder:text-[16px] placeholder:text-muted-foreground",
+          "h-13 pl-5 pr-11 rounded-md border border-[#151515] cursor-not-allowed text-left"
+        )}
+        style={{ fontFamily: "inherit" }}
+      />
 
-                  {forgotOtpError && (
-                    <div className="flex items-center gap-1 mt-1 text-sm text-red-500">
-                      <AlertCircle size={16} />
-                      <span>{forgotOtpError}</span>
-                    </div>
-                  )}
+      {/* botão voltar (agora no canto direito) */}
+      <button
+        type="button"
+        onClick={handleBackToEmail}
+        className={cn(
+          "absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground opacity-60",
+          "cursor-pointer transition z-50 pointer-events-auto"
+        )}
+      >
+        <ArrowLeft size={20} />
+      </button>
+    </div>
 
-                  <FieldDescription className="text-center mt-1">
-                    Não recebeu?{" "}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (forgotResending) return;
-                        setForgotResending(true);
-                        try {
-                          const res = await fetch("/api/forgot-pass", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ email: forgotEmail }),
-                          });
-                          const data = await res.json();
-                          if (!res.ok) {
-                            setForgotOtpError(data.error || "Erro ao reenviar código");
-                          }
-                        } catch {
-                          setForgotOtpError("Erro ao reenviar código");
-                        } finally {
-                          setForgotResending(false);
-                        }
-                      }}
-                      className="text-muted-foreground underline cursor-pointer hover:text-foreground transition-all"
-                    >
-                      {forgotResending ? "enviando..." : "Reenviar Código"}
-                    </button>
-                  </FieldDescription>
-                </Field>
-              </div>
-            )}
+    {/* bloco OTP */}
+    <div className="flex flex-col gap-4 items-center w-full">
+      <Field>
+        <FieldLabel htmlFor="forgot-otp" className="sr-only">
+          Código OTP
+        </FieldLabel>
 
+        <InputOTP
+          maxLength={6}
+          id="forgot-otp"
+          value={forgotOtp}
+          onChange={(value: string) => setForgotOtp(value)}
+          containerClassName="gap-4 w-full justify-center"
+        >
+          <InputOTPGroup className="gap-2.5 *:data-[slot=input-otp-slot]:h-16 *:data-[slot=input-otp-slot]:w-12 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border *:data-[slot=input-otp-slot]:text-xl">
+            <InputOTPSlot index={0} />
+            <InputOTPSlot index={1} />
+            <InputOTPSlot index={2} />
+          </InputOTPGroup>
+          <InputOTPSeparator />
+          <InputOTPGroup className="gap-2.5 *:data-[slot=input-otp-slot]:h-16 *:data-[slot=input-otp-slot]:w-12 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border *:data-[slot=input-otp-slot]:text-xl">
+            <InputOTPSlot index={3} />
+            <InputOTPSlot index={4} />
+            <InputOTPSlot index={5} />
+          </InputOTPGroup>
+        </InputOTP>
+
+        {forgotOtpError && (
+          <div className="flex items-center gap-1 mt-1 text-sm text-red-500">
+            <AlertCircle size={16} />
+            <span>{forgotOtpError}</span>
+          </div>
+        )}
+
+        <FieldDescription className="text-center mt-1">
+          Não recebeu?{" "}
+          <button
+            type="button"
+            onClick={async () => {
+              if (forgotResending) return;
+              setForgotResending(true);
+              try {
+                const res = await fetch("/api/forgot-pass", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ email: forgotEmail }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                  setForgotOtpError(
+                    data.error || "Erro ao reenviar código"
+                  );
+                }
+              } catch {
+                setForgotOtpError("Erro ao reenviar código");
+              } finally {
+                setForgotResending(false);
+              }
+            }}
+            className="text-muted-foreground underline cursor-pointer hover:text-foreground transition-all"
+          >
+            {forgotResending ? "enviando..." : "Reenviar Código"}
+          </button>
+        </FieldDescription>
+      </Field>
+    </div>
+  </div>
+)}
             {forgotStep === "reset" && (
               <div
                 className={cn(
