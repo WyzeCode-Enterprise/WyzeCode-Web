@@ -1,104 +1,169 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+/**
+ * Tela que abre no celular depois que o usuário escaneia o QR.
+ * Passos:
+ *  - Lemos ?wzb_token=... da URL
+ *  - Usuário clica "Ativar câmera"
+ *  - Pedimos getUserMedia
+ *    - tentamos frontal (facingMode: "user")
+ *    - se falhar, tentamos sem facingMode (fallback)
+ *  - Mostramos preview espelhado (selfie)
+ *  - Quando clica "Capturar e enviar", tiramos um frame e mandamos pro PUT /api/qrface
+ *  - Se deu certo, travamos a tela e exibimos a foto enviada
+ */
 
 export default function QRFacePage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // token que veio no link do QR (?wzb_token=...)
+  // token do link (?wzb_token=...)
   const [token, setToken] = useState<string | null>(null);
 
-  // stream de câmera
+  // controle da câmera
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraTryingPlay, setCameraTryingPlay] = useState(false);
 
-  // estado geral da câmera
-  const [cameraReady, setCameraReady] = useState(false); // vídeo tocando
-  const [askingPermission, setAskingPermission] = useState(false); // enquanto tenta abrir
-  const [permissionAsked, setPermissionAsked] = useState(false); // já clicou no botão "Ativar câmera" pelo menos uma vez?
+  // permissão
+  const [askingPermission, setAskingPermission] = useState(false);
+  const [permissionAsked, setPermissionAsked] = useState(false);
 
   // envio da selfie
   const [capturing, setCapturing] = useState(false);
-  const [selfiePreview, setSelfiePreview] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [selfiePreview, setSelfiePreview] = useState<string | null>(null);
 
-  // mensagens
+  // mensagens visuais
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // pega token da URL quando a página monta
+  // pega o token da URL
   useEffect(() => {
-    const sp = new URLSearchParams(window.location.search);
-    const t = sp.get("wzb_token");
-    setToken(t || null);
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const t = sp.get("wzb_token");
+      setToken(t || null);
+    } catch (err) {
+      console.error("Falha lendo token da URL:", err);
+      setToken(null);
+      setErrorMsg("Link inválido.");
+    }
   }, []);
 
-  // função que pede permissão e abre a câmera frontal
+  // função interna que configura o <video> depois de conseguir o stream
+  const attachStreamToVideo = useCallback(async (media: MediaStream) => {
+    if (!videoRef.current) return;
+
+    // bota o stream no elemento
+    videoRef.current.srcObject = media;
+
+    // tenta tocar quando o metadata estiver pronto
+    const videoEl = videoRef.current;
+
+    const tryPlay = () => {
+      setCameraTryingPlay(true);
+      videoEl
+        .play()
+        .then(() => {
+          setCameraReady(true);
+          setCameraTryingPlay(false);
+        })
+        .catch((err) => {
+          console.warn("Falha ao dar play no vídeo:", err);
+          // iOS Safari pode exigir toque manual no vídeo pra dar play
+          setCameraReady(false);
+          setCameraTryingPlay(false);
+          setErrorMsg(
+            "Toque na prévia de vídeo para iniciar a câmera se ela não começar sozinha."
+          );
+        });
+    };
+
+    if (videoEl.readyState >= 1) {
+      tryPlay();
+    } else {
+      const onLoadedMetadata = () => {
+        videoEl.removeEventListener("loadedmetadata", onLoadedMetadata);
+        tryPlay();
+      };
+      videoEl.addEventListener("loadedmetadata", onLoadedMetadata);
+    }
+  }, []);
+
+  // pedir permissão de câmera
   const requestCameraAccess = useCallback(async () => {
-    if (askingPermission) return;
+    if (askingPermission || capturing || done) return;
     setErrorMsg(null);
     setAskingPermission(true);
     setPermissionAsked(true);
 
-    try {
-      // pede câmera frontal
-      const media = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "user" }, // frontal
-          width: { ideal: 720 },
-          height: { ideal: 1280 },
-        },
+    async function getMediaFrontFirstThenFallback() {
+      // 1ª tentativa: câmera frontal
+      try {
+        const mediaFront = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "user" },
+            width: { ideal: 720 },
+            height: { ideal: 1280 },
+          },
+          audio: false,
+        });
+        return mediaFront;
+      } catch {
+        // falhou frontal (às vezes no desktop / alguns android)
+      }
+
+      // fallback: qualquer câmera disponível
+      const mediaAny = await navigator.mediaDevices.getUserMedia({
+        video: true,
         audio: false,
       });
+      return mediaAny;
+    }
 
+    try {
+      if (!token) {
+        setErrorMsg("Link inválido (token ausente).");
+        setAskingPermission(false);
+        return;
+      }
+
+      const media = await getMediaFrontFirstThenFallback();
       setStream(media);
 
-      // joga stream no <video>
-      if (videoRef.current) {
-        videoRef.current.srcObject = media;
-      }
-
-      // vamos tentar tocar o vídeo assim que ele tiver metadata
-      const videoEl = videoRef.current;
-      if (videoEl) {
-        const handleLoadedMetadata = () => {
-          // tenta dar play programaticamente
-          videoEl
-            .play()
-            .then(() => {
-              setCameraReady(true);
-            })
-            .catch((err) => {
-              console.warn("Falha ao dar play no vídeo:", err);
-              // alguns browsers só liberam depois que o user toca manualmente,
-              // mas a essa altura já temos stream, então só avisamos
-              setCameraReady(false);
-              setErrorMsg(
-                "Toque na prévia de vídeo para iniciar a câmera se ela não começar sozinha."
-              );
-            });
-        };
-
-        // se já carregou metadata, chama direto.
-        if (videoEl.readyState >= 1) {
-          handleLoadedMetadata();
-        } else {
-          videoEl.addEventListener("loadedmetadata", handleLoadedMetadata, {
-            once: true,
-          });
-        }
-      }
+      await attachStreamToVideo(media);
     } catch (err) {
       console.error("Erro ao acessar câmera:", err);
-      setErrorMsg(
-        "Não foi possível usar a câmera. Ative as permissões do navegador e tente novamente."
-      );
       setCameraReady(false);
+
+      // checa se HTTPS pode ser o problema
+      const insecure =
+        typeof window !== "undefined" &&
+        window.location.protocol !== "https:" &&
+        window.location.hostname !== "localhost";
+
+      if (insecure) {
+        setErrorMsg(
+          "Navegador bloqueou a câmera porque a conexão não é segura. Abra este link em HTTPS."
+        );
+      } else {
+        setErrorMsg(
+          "Não foi possível usar a câmera. Verifique permissões do navegador."
+        );
+      }
     } finally {
       setAskingPermission(false);
     }
-  }, [askingPermission]);
+  }, [askingPermission, capturing, done, token, attachStreamToVideo]);
 
-  // cleanup: parar a câmera ao desmontar
+  // cleanup: parar câmera quando sai da página
   useEffect(() => {
     return () => {
       if (stream) {
@@ -107,9 +172,39 @@ export default function QRFacePage() {
     };
   }, [stream]);
 
+  // o usuário pode tocar manualmente no vídeo pra tentar play() de novo
+  function handleManualPlay() {
+    if (!videoRef.current) return;
+    if (cameraReady) return;
+
+    setCameraTryingPlay(true);
+    videoRef.current
+      .play()
+      .then(() => {
+        setCameraReady(true);
+        setCameraTryingPlay(false);
+      })
+      .catch((err) => {
+        console.warn("Still can't play:", err);
+        setCameraTryingPlay(false);
+      });
+  }
+
   // captura frame atual e envia para o backend
   async function handleCaptureAndSend() {
-    if (!videoRef.current || !canvasRef.current || !token || done) return;
+    if (done) return;
+    if (!cameraReady) {
+      setErrorMsg("Câmera ainda não está pronta.");
+      return;
+    }
+    if (!videoRef.current || !canvasRef.current) {
+      setErrorMsg("Câmera indisponível.");
+      return;
+    }
+    if (!token) {
+      setErrorMsg("Token inválido.");
+      return;
+    }
 
     setCapturing(true);
     setErrorMsg(null);
@@ -117,13 +212,13 @@ export default function QRFacePage() {
     const videoEl = videoRef.current;
     const canvasEl = canvasRef.current;
 
+    // resolução real do frame
     const w = videoEl.videoWidth;
     const h = videoEl.videoHeight;
 
-    // Browser ainda sem metadata?
     if (!w || !h) {
       setCapturing(false);
-      setErrorMsg("Câmera ainda inicializando. Tente de novo.");
+      setErrorMsg("Câmera ainda inicializando, tente de novo.");
       return;
     }
 
@@ -137,13 +232,13 @@ export default function QRFacePage() {
       return;
     }
 
-    // espelhar horizontal pra parecer selfie (câmera frontal é espelhada)
+    // espelha horizontal (estética selfie)
     ctx.save();
     ctx.scale(-1, 1);
     ctx.drawImage(videoEl, -w, 0, w, h);
     ctx.restore();
 
-    // gera base64 (JPEG ~ alta qualidade)
+    // extrai JPEG base64
     const dataUrl = canvasEl.toDataURL("image/jpeg", 0.9);
 
     try {
@@ -165,9 +260,14 @@ export default function QRFacePage() {
         return;
       }
 
-      // sucesso: mostramos o preview final e travamos a tela
+      // sucesso
       setSelfiePreview(data.selfiePreview || dataUrl);
       setDone(true);
+
+      // segurança: para a câmera quando finaliza
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+      }
     } catch (err) {
       console.error("Erro de rede:", err);
       setErrorMsg("Erro de rede ao enviar selfie.");
@@ -176,44 +276,10 @@ export default function QRFacePage() {
     }
   }
 
-  // --- UI helpers -------------------------------------------------------
+  // ---------------- UI helpers ----------------
 
-  // status que aparece sobre o vídeo enquanto a câmera não está ativa
-  function renderCameraStatusOverlay() {
-    // já tirou selfie? então não mostra overlay
-    if (selfiePreview) return null;
-
-    // se a câmera está visível e tocando, não mostra overlay
-    if (cameraReady) return null;
-
-    // se ainda nem pediu permissão
-    if (!permissionAsked) {
-      return (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] leading-snug text-white/90 py-2 px-3">
-          Toque em "Ativar câmera" para começar.
-        </div>
-      );
-    }
-
-    // pediu permissão mas ainda está iniciando
-    if (askingPermission) {
-      return (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] leading-snug text-white/90 py-2 px-3">
-          Abrindo câmera...
-        </div>
-      );
-    }
-
-    // tentou abrir mas não ficou ready automaticamente
-    return (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] leading-snug text-white/90 py-2 px-3">
-          Se a câmera estiver preta, toque na prévia para liberar o vídeo.
-        </div>
-    );
-  }
-
-  // máscara de rosto tipo "oval de selfie", com glow verde
   function FaceMaskOverlay() {
+    // não mostrar overlay se já finalizou
     if (selfiePreview) return null;
 
     return (
@@ -221,9 +287,8 @@ export default function QRFacePage() {
         className="pointer-events-none absolute inset-0 flex items-center justify-center"
         aria-hidden="true"
       >
-        {/* container da moldura/rosto */}
         <div className="relative w-[220px] h-[300px]">
-          {/* contorno com glow verde */}
+          {/* Moldura verde com glow (formato rosto alongado) */}
           <div
             className="
               absolute inset-0
@@ -233,8 +298,7 @@ export default function QRFacePage() {
             "
           />
 
-          {/* sombra escura DO LADO DE FORA do rosto */}
-          {/* truque: pseudo "vignette" radial só que recortado na mesma shape */}
+          {/* Vinheta escura fora do rosto */}
           <div
             className="
               absolute -inset-[100px]
@@ -243,7 +307,7 @@ export default function QRFacePage() {
             "
             style={{
               background:
-                "radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.75) 70%)",
+                "radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.8) 70%)",
             }}
           />
         </div>
@@ -251,18 +315,48 @@ export default function QRFacePage() {
     );
   }
 
-  // bloco principal (câmera ou selfie final)
+  function renderCameraStatusOverlay() {
+    if (selfiePreview) return null;
+    if (cameraReady) return null;
+
+    // Nunca pediu permissão ainda
+    if (!permissionAsked) {
+      return (
+        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] text-white/90 py-2 px-3 leading-snug">
+          Toque em "Ativar câmera" para começar.
+        </div>
+      );
+    }
+
+    // Pedindo permissão agora
+    if (askingPermission) {
+      return (
+        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] text-white/90 py-2 px-3 leading-snug">
+          Abrindo câmera...
+        </div>
+      );
+    }
+
+    // Já pediu, mas autoplay falhou
+    return (
+      <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] text-white/90 py-2 px-3 leading-snug">
+        {cameraTryingPlay
+          ? "Tentando iniciar fluxo de vídeo..."
+          : "Se a câmera estiver preta, toque no vídeo para liberar."}
+      </div>
+    );
+  }
+
   function renderCameraBlock() {
-    // se já enviou selfie, mostra o resultado final com borda verde
+    // Já finalizado → mostra selfie enviada em destaque
     if (selfiePreview) {
       return (
         <div className="relative w-[320px] max-w-full h-[400px] rounded-2xl overflow-hidden ring-2 ring-[#26FF59]/60 shadow-[0_0_40px_#26FF5966] bg-neutral-900 flex items-center justify-center">
           <img
             src={selfiePreview}
-            alt="Sua selfie enviada"
+            alt="Selfie enviada"
             className="w-full h-full object-cover"
           />
-
           <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-center text-[0.7rem] py-2 text-white font-medium">
             Selfie enviada com sucesso
           </div>
@@ -270,38 +364,34 @@ export default function QRFacePage() {
       );
     }
 
-    // caso normal: preview da câmera
+    // Pré-captura → preview da câmera
     return (
       <div className="relative w-[320px] max-w-full h-[400px] flex items-center justify-center rounded-2xl overflow-hidden ring-1 ring-white/10 bg-black">
         <video
           ref={videoRef}
-          className="
-            absolute inset-0 w-full h-full object-cover
-            [transform:scaleX(-1)]
-          "
+          className="absolute inset-0 w-full h-full object-cover [transform:scaleX(-1)]"
           playsInline
           autoPlay
           muted
+          onClick={handleManualPlay} // iOS: user tap para tentar play
         />
-
         <FaceMaskOverlay />
         {renderCameraStatusOverlay()}
       </div>
     );
   }
 
-  // botão principal (ou mensagem final)
   function renderActionArea() {
-    // já enviou selfie
+    // finalizado
     if (selfiePreview) {
       return (
         <div className="text-center text-[0.8rem] text-white/70 leading-relaxed px-4">
-          Você já enviou sua selfie. Pode fechar esta tela.
+          Pronto! Você já enviou sua selfie. Pode fechar esta tela.
         </div>
       );
     }
 
-    // se ainda não pedimos permissão pra câmera
+    // ainda não pediu permissão
     if (!permissionAsked) {
       return (
         <button
@@ -319,7 +409,7 @@ export default function QRFacePage() {
       );
     }
 
-    // já pedimos permissão e (talvez) a câmera está ativa
+    // permissão já pedida → botão de capturar
     return (
       <button
         onClick={handleCaptureAndSend}
@@ -339,38 +429,32 @@ export default function QRFacePage() {
   return (
     <main className="min-h-screen w-full flex items-center justify-center bg-[radial-gradient(circle_at_20%_20%,#1a1a1a_0%,#000000_70%)] text-white p-6">
       <div className="w-full max-w-[22rem] flex flex-col items-center gap-6 text-center">
-        {/* Header */}
         <header className="flex flex-col gap-2">
           <h1 className="text-[1.1rem] font-semibold text-white tracking-tight">
-            Verificação de rosto
+            Verificação facial
           </h1>
           <p className="text-[0.85rem] text-white/70 leading-relaxed">
-            Enquadre seu rosto dentro da área destacada.
-            Quando estiver pronto, toque em
-            <strong className="text-white font-medium"> Capturar</strong>.
+            Enquadre seu rosto dentro da área destacada. Quando estiver pronto,
+            toque em <strong className="text-white font-medium">Capturar</strong>.
           </p>
         </header>
 
-        {/* Bloco da câmera / selfie final */}
         {renderCameraBlock()}
 
-        {/* Canvas escondido pra captura do frame */}
+        {/* canvas escondido que a gente usa só na captura */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Mensagem de erro */}
         {errorMsg && (
           <div className="text-red-400 text-[0.75rem] leading-relaxed px-4">
             {errorMsg}
           </div>
         )}
 
-        {/* CTA */}
         {renderActionArea()}
 
-        {/* Rodapé instruções */}
         <footer className="text-[0.7rem] text-white/40 text-center leading-relaxed max-w-[240px]">
-          Luz clara, rosto totalmente visível.
-          Sem óculos escuros, máscara ou boné cobrindo o rosto.
+          Iluminação clara. Rosto totalmente visível. Sem óculos escuros,
+          boné ou máscara cobrindo o rosto.
         </footer>
       </div>
     </main>

@@ -414,14 +414,65 @@ function VerifyDocumentsDrawer({
 
   const [uploadModalOpen, setUploadModalOpen] = React.useState(false);
 
-  // QR / Selfie flow
-  const [qrUrl, setQrUrl] = React.useState<string | null>(null);
-  const [qrToken, setQrToken] = React.useState<string | null>(null);
-  const [qrLoading, setQrLoading] = React.useState(false);
-  const [qrError, setQrError] = React.useState<string | null>(null);
+// Dentro do seu VerifyDocumentsDrawer (client component)
 
-  // selfie capturada (pra trocar o QR ao vivo)
-  const [selfiePreview, setSelfiePreview] = React.useState<string | null>(null);
+const [qrUrl, setQrUrl] = React.useState<string | null>(null);
+const [qrToken, setQrToken] = React.useState<string | null>(null);
+const [qrLoading, setQrLoading] = React.useState(false);
+const [qrError, setQrError] = React.useState<string | null>(null);
+
+const [selfiePreview, setSelfiePreview] = React.useState<string | null>(null);
+
+// chama POST /api/qrface para obter ou reutilizar token ativo
+async function bootstrapQRSession() {
+  try {
+    setQrLoading(true);
+    setQrError(null);
+
+    const resp = await fetch("/api/qrface", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      setQrError(data.error || "Erro ao gerar QR Code.");
+      setQrLoading(false);
+      return;
+    }
+
+    // se já tem selfie pronta vindo do backend,
+    // já mostra direto e nem precisa mostrar QR
+    if (data.selfie_b64) {
+      setSelfiePreview(data.selfie_b64);
+    }
+
+    setQrUrl(data.url || null);     // URL que vai no QR code
+    setQrToken(data.token || null); // token puro, usamos no polling
+    setQrLoading(false);
+  } catch (err) {
+    console.error("Falha inicializando sessão QR:", err);
+    setQrError("Erro de rede ao gerar QR Code.");
+    setQrLoading(false);
+  }
+}
+
+// 1) Quando o drawer abre, inicializa a sessão (se ainda não inicializou)
+React.useEffect(() => {
+  if (!open) return;
+
+  // carrega imagens de documento salvas localmente, etc
+  const { front, back } = loadImagesFromLocalStorage();
+  if (front) setFrontConfirmed(front);
+  if (back) setBackConfirmed(back);
+
+  // inicializa sessão QR / selfie
+  // só chama se a gente ainda não tem qrToken nem selfiePreview
+  if (!qrToken && !selfiePreview) {
+    bootstrapQRSession();
+  }
+}, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // carregar previews de doc localStorage quando drawer abre
   React.useEffect(() => {
@@ -483,55 +534,56 @@ React.useEffect(() => {
   fetchOrCreateQR();
 }, [open, qrToken]);
 
-    // polling pra ver se já chegou selfie
-  React.useEffect(() => {
-    // se o drawer não tá aberto ou ainda não temos token, não faz nada
-    if (!open) return;
-    if (!qrToken) return;
+React.useEffect(() => {
+  if (!open) return;
+  if (!qrToken) return;
+  if (selfiePreview) return;
 
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-    let stopped = false;
+  // agora garantimos pra TS que é string
+  const tokenForPoll = qrToken;
 
-    async function doPoll(currentToken: string) {
-      try {
-        const res = await fetch(
-          `/api/qrface?token=${encodeURIComponent(currentToken)}`,
-          { method: "GET" }
-        );
-        const data = await res.json();
+  let intervalId: any;
 
-        if (!res.ok) {
-          console.warn("Polling erro:", data.error);
-          return;
-        }
+  async function poll() {
+    try {
+      const res = await fetch(
+        `/api/qrface?token=${encodeURIComponent(tokenForPoll)}`,
+        { method: "GET" }
+      );
+      const data = await res.json();
 
-        // se já tem selfie_b64 -> atualiza preview
-        if (data.selfie_b64) {
-          setSelfiePreview(data.selfie_b64);
-        }
-      } catch (err) {
-        console.warn("Polling falhou:", err);
+      if (!res.ok) {
+        console.warn("Polling erro:", data.error);
+        return;
       }
+
+      // status pode ser:
+      //  - pending_face (aguardando selfie)
+      //  - face_captured (selfie chegou)
+      //  - expired (venceu sem selfie)
+      //  - etc (blocked, validated, ...)
+      if (data.status === "face_captured" && data.selfie_b64) {
+        setSelfiePreview(data.selfie_b64);
+        return;
+      }
+
+      if (data.status === "expired" && !data.selfie_b64) {
+        // token venceu sem selfie → tenta gerar um novo
+        bootstrapQRSession();
+      }
+    } catch (err) {
+      console.warn("Polling falhou:", err);
     }
+  }
 
-    // dispara imediatamente
-    doPoll(qrToken);
+  // start polling
+  poll();
+  intervalId = setInterval(poll, 2500);
 
-    // e depois continua chamando a cada 2.5s
-    intervalId = setInterval(() => {
-      if (!stopped && qrToken) {
-        doPoll(qrToken);
-      }
-    }, 2500);
-
-    // cleanup
-    return () => {
-      stopped = true;
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [open, qrToken]);
+  return () => {
+    clearInterval(intervalId);
+  };
+}, [open, qrToken, selfiePreview]);
 
   function handleConfirmUpload(finalFrontB64: string | null, finalBackB64: string | null) {
     setFrontConfirmed(finalFrontB64);
@@ -788,76 +840,75 @@ React.useEffect(() => {
 
             <Separator />
 
-            {/* SELFIE / PROVA DE VIDA VIA QRCODE */}
-            <div className="grid gap-2 pt-2">
-              <div className="text-[16px] font-medium text-foreground">
-                Selfie de verificação
-              </div>
+           <div className="grid gap-2 pt-2">
+  <div className="text-[16px] font-medium text-foreground">
+    Selfie de verificação
+  </div>
 
-              <div className="text-[14px] leading-snug text-muted-foreground">
-                Agora precisamos confirmar que você é realmente você.
-                Aponte a câmera do seu celular para o QR abaixo e siga
-                as instruções para validar seu rosto em tempo real.
-              </div>
+  <div className="text-[14px] leading-snug text-muted-foreground">
+    Agora precisamos confirmar que você é realmente você.
+    Aponte a câmera do seu celular para o QR abaixo e siga
+    as instruções para validar seu rosto em tempo real.
+  </div>
 
-              <div
-                className={cn(
-                  "flex flex-col items-center justify-center",
-                  "rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40",
-                  "px-4 py-8 text-center transition-colors",
-                  "hover:border-neutral-500/80 hover:bg-neutral-900/40"
-                )}
-              >
-                <div className="relative flex h-[200px] w-[200px] items-center justify-center rounded-md bg-white overflow-hidden">
-                  {/* estado 1: carregando token */}
-                  {qrLoading && !selfiePreview && (
-                    <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[11px] font-semibold text-neutral-400 ring-1 ring-border">
-                      Gerando QR...
-                    </div>
-                  )}
+  <div
+    className={cn(
+      "flex flex-col items-center justify-center",
+      "rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40",
+      "px-4 py-8 text-center transition-colors",
+      "hover:border-neutral-500/80 hover:bg-neutral-900/40"
+    )}
+  >
+    <div className="relative flex h-[200px] w-[200px] items-center justify-center rounded-md bg-white overflow-hidden ring-1 ring-border">
+      {/* 1. carregando sessão */}
+      {qrLoading && !selfiePreview && (
+        <div className="flex h-[200px] w-[200px] items-center justify-center bg-neutral-800 text-[11px] font-semibold text-neutral-400">
+          Gerando QR...
+        </div>
+      )}
 
-                  {/* estado 2: erro ao gerar token */}
-                  {qrError && !selfiePreview && (
-                    <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-center text-[11px] font-semibold text-red-400 ring-1 ring-border px-4 leading-relaxed">
-                      {qrError}
-                    </div>
-                  )}
+      {/* 2. erro */}
+      {qrError && !selfiePreview && (
+        <div className="flex h-[200px] w-[200px] items-center justify-center bg-neutral-800 text-center text-[11px] font-semibold text-red-400 px-4 leading-relaxed">
+          {qrError}
+        </div>
+      )}
 
-                  {/* estado 3: já temos selfie validada */}
-                  {selfiePreview && (
-                    <img
-                      src={selfiePreview}
-                      alt="Selfie capturada"
-                      className="w-[200px] h-[200px] object-cover"
-                    />
-                  )}
+      {/* 3. selfie já capturada */}
+      {selfiePreview && (
+        <img
+          src={selfiePreview}
+          alt="Selfie capturada"
+          className="w-[200px] h-[200px] object-cover"
+        />
+      )}
 
-                  {/* estado 4: mostrar QR normalmente */}
-                  {!qrLoading && !qrError && !selfiePreview && qrUrl && (
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
-                        qrUrl
-                      )}`}
-                      alt="QR code para verificação facial"
-                      className="w-[190px] h-[190px] rounded-md ring-border bg-white object-contain"
-                    />
-                  )}
+      {/* 4. QR code ativo (somente se não tem selfiePreview) */}
+      {!qrLoading && !qrError && !selfiePreview && qrUrl && (
+        <img
+          src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+            qrUrl
+          )}`}
+          alt="QR code para verificação facial"
+          className="w-[190px] h-[190px] bg-white object-contain"
+        />
+      )}
 
-                  {/* fallback se nada deu certo */}
-                  {!qrLoading && !qrError && !selfiePreview && !qrUrl && (
-                    <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[10px] font-semibold text-neutral-400 ring-1 ring-border">
-                      QR CODE
-                    </div>
-                  )}
-                </div>
-              </div>
+      {/* 5. fallback se deu ruim e não temos nada */}
+      {!qrLoading && !qrError && !selfiePreview && !qrUrl && (
+        <div className="flex h-[200px] w-[200px] items-center justify-center bg-neutral-800 text-[10px] font-semibold text-neutral-400">
+          QR CODE
+        </div>
+      )}
+    </div>
+  </div>
 
-              <div className="text-[13px] leading-relaxed text-muted-foreground">
-                • Garanta boa iluminação e seu rosto totalmente visível.
-                <br />
-                • Não utilize óculos escuros, máscara ou boné cobrindo o rosto.
-              </div>
-            </div>
+  <div className="text-[13px] leading-relaxed text-muted-foreground">
+    • Garanta boa iluminação e seu rosto totalmente visível.
+    <br />
+    • Não utilize óculos escuros, máscara ou boné cobrindo o rosto.
+  </div>
+</div>
           </div>
 
           <DrawerFooter className="gap-2 px-4 pb-4 pt-0 sm:px-6">
