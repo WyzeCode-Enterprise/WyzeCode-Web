@@ -1004,7 +1004,7 @@ export function VerifyDocumentsSection({
         user={user}
         lockedFromServer={inReview}
         onSubmitted={() => {
-          setInReview(true); // trava alerta e mantém confirmação inline
+          setInReview(true); 
         }}
       />
     </>
