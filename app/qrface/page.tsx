@@ -68,6 +68,7 @@ export default function QRFacePage() {
             cache: "no-store",
           }
         );
+
         const data = await res.json();
 
         if (!res.ok) {
@@ -81,7 +82,8 @@ export default function QRFacePage() {
 
         // regra:
         // - se backend já tem selfie => status face_captured
-        // - qualquer outro status => tratar como "pending_face"
+        // - se backend disser blocked/validated, respeita
+        // - senão => pending_face
         let mappedStatus: TokenStatus;
         if (data.status === "face_captured") {
           mappedStatus = "face_captured";
@@ -114,7 +116,6 @@ export default function QRFacePage() {
   const attachStreamToVideo = useCallback(async (media: MediaStream) => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
-
     videoEl.srcObject = media;
 
     const tryPlay = () => {
@@ -209,7 +210,6 @@ export default function QRFacePage() {
     try {
       const media = await getMediaFrontFirstThenFallback();
       setStream(media);
-
       await attachStreamToVideo(media);
     } catch (err) {
       console.error("Erro ao acessar câmera:", err);
@@ -399,6 +399,7 @@ export default function QRFacePage() {
       ? 2
       : 1;
 
+  // subcomponente: etapa visual do fluxo (1 Preparar -> 2 Capturar -> 3 Concluído)
   function StepIndicator() {
     function Bubble(
       label: string,
@@ -447,6 +448,7 @@ export default function QRFacePage() {
     );
   }
 
+  // subcomponente: máscara verde/overlay do rosto na câmera
   function FaceMaskOverlay() {
     if (selfiePreview) return null;
     if (sessionIsClearlyFinished) return null;
@@ -456,7 +458,6 @@ export default function QRFacePage() {
         aria-hidden="true"
       >
         <div className="relative h-[300px] w-[220px]">
-          {/* moldura verde com glow */}
           <div
             className="
               absolute inset-0
@@ -465,7 +466,6 @@ export default function QRFacePage() {
               shadow-[0_0_30px_rgba(38,255,89,0.55),0_0_70px_rgba(38,255,89,0.25)]
             "
           />
-          {/* vinheta fora do rosto */}
           <div
             className="
               pointer-events-none absolute -inset-[100px]
@@ -481,6 +481,7 @@ export default function QRFacePage() {
     );
   }
 
+  // overlay no rodapé do vídeo (mensagens tipo "Abrindo câmera...")
   function renderCameraStatusOverlay() {
     if (selfiePreview) return null;
 
@@ -496,7 +497,7 @@ export default function QRFacePage() {
 
     if (!permissionAsked) {
       return (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 px-3 text-[0.75rem] leading-snug text-white/90">
+        <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 px-3 text-center text-[0.75rem] leading-snug text-white/90">
           Toque em "Ativar câmera" para começar.
         </div>
       );
@@ -504,14 +505,14 @@ export default function QRFacePage() {
 
     if (askingPermission) {
       return (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 px-3 text-[0.75rem] leading-snug text-white/90">
+        <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 px-3 text-center text-[0.75rem] leading-snug text-white/90">
           Abrindo câmera...
         </div>
       );
     }
 
     return (
-      <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 px-3 text-[0.75rem] leading-snug text-white/90">
+      <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 px-3 text-center text-[0.75rem] leading-snug text-white/90">
         {cameraTryingPlay
           ? "Tentando iniciar vídeo..."
           : "Se a tela estiver preta, toque no vídeo para liberar."}
@@ -519,6 +520,7 @@ export default function QRFacePage() {
     );
   }
 
+  // bloco principal de preview (ou câmera ao vivo)
   function renderCameraBlock() {
     if (selfiePreview) {
       return (
@@ -551,6 +553,7 @@ export default function QRFacePage() {
     );
   }
 
+  // área abaixo do preview: botão de ação ou mensagem final
   function renderActionArea() {
     if (selfiePreview || tokenStatus === "face_captured" || done) {
       return (
@@ -607,6 +610,9 @@ export default function QRFacePage() {
     );
   }
 
+  // ==========================================================
+  // render final da página
+  // ==========================================================
   return (
     <main className="flex min-h-screen w-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,#1a1a1a_0%,#000000_70%)] p-6 text-white">
       <div className="flex w-full max-w-[22rem] flex-col items-center gap-6 text-center">

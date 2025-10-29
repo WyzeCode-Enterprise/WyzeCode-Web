@@ -325,7 +325,8 @@ export async function POST(req: NextRequest) {
         )}`,
         selfie_b64: sess.selfie_b64 || null,
         // devolve status atual (mas nunca forçamos "expired" aqui)
-        status: sess.status === "face_captured" ? "face_captured" : "pending_face",
+        status:
+          sess.status === "face_captured" ? "face_captured" : "pending_face",
       });
     }
 
@@ -487,8 +488,8 @@ export async function PUT(req: NextRequest) {
   } catch (err: any) {
     console.error("[QRFACE PUT ERROR]", err);
     return jsonNoStore(
-      { error: err.message || "Erro interno" },
-      { status: 500 }
+        { error: err.message || "Erro interno" },
+        { status: 500 }
     );
   }
 }
@@ -531,10 +532,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // status "efetivo" pro front:
-    // - se banco diz face_captured → face_captured
-    // - se banco diz qualquer outra coisa (pending_face, etc) → pending_face
-    // (não devolvemos mais "expired")
+    // status efetivo
     const effectiveStatus =
       sess.status === "face_captured"
         ? "face_captured"
@@ -551,6 +549,98 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("[QRFACE GET ERROR]", err);
+    return jsonNoStore(
+      { error: err.message || "Erro interno" },
+      { status: 500 }
+    );
+  }
+}
+
+/* =========================================================================
+   DELETE /api/qrface
+   Chamado pelo DASHBOARD quando o usuário clica no "X" pra remover a selfie.
+
+   O que faz:
+   - identifica a sessão facial do login atual
+   - limpa a selfie_b64
+   - volta status pra 'pending_face'
+   - reseta internal_token / w_code
+   - gera um novo ticket (QR novo)
+   - devolve a nova URL pro front renderizar o novo QR
+ ========================================================================= */
+export async function DELETE(req: NextRequest) {
+  try {
+    const { uid, sid } = getSessionInfoFromCookie(req);
+    if (!uid || !sid) {
+      return jsonNoStore(
+        { error: "Usuário não autenticado." },
+        { status: 401 }
+      );
+    }
+
+    // pega sessão facial existente
+    const sess = await fetchFaceSessionByLoginSid(sid);
+    if (!sess) {
+      return jsonNoStore(
+        { error: "Sessão facial não encontrada." },
+        { status: 404 }
+      );
+    }
+
+    const newInternalToken = generateInternalToken();
+    const newWCode = generateWCode();
+
+    // resetar a mesma linha:
+    // - limpa selfie
+    // - volta pro status 'pending_face'
+    // - limpa used_at
+    // - gera novos tokens internos
+    await db.query(
+      `
+        UPDATE face_sessions
+        SET internal_token = ?,
+            w_code = ?,
+            status = 'pending_face',
+            used_at = NULL,
+            expires_at = DATE_ADD(NOW(), INTERVAL ${TOKEN_LIFETIME_MIN} MINUTE)
+        WHERE id = ?
+      `,
+      [newInternalToken, newWCode, sess.face_session_id]
+    );
+
+    await db.query(
+      `
+        UPDATE face_session_data
+        SET selfie_b64 = NULL,
+            updated_at = NOW()
+        WHERE face_session_id = ?
+      `,
+      [sess.face_session_id]
+    );
+
+    // refetch pra garantir consistência
+    const refreshed = await fetchFaceSessionById(sess.face_session_id);
+    if (!refreshed) {
+      return jsonNoStore(
+        { error: "Falha ao reiniciar sessão facial." },
+        { status: 500 }
+      );
+    }
+
+    // gera novo ticket pro celular (QR)
+    const sessionTicket = signFaceSessionTicket(refreshed.face_session_id);
+
+    return jsonNoStore({
+      success: true,
+      session: sessionTicket,
+      url: `https://wyzebank.com/qrface?session=${encodeURIComponent(
+        sessionTicket
+      )}`,
+      selfie_b64: null,
+      status: "pending_face",
+    });
+  } catch (err: any) {
+    console.error("[QRFACE DELETE ERROR]", err);
     return jsonNoStore(
       { error: err.message || "Erro interno" },
       { status: 500 }
