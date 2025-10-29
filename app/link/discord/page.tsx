@@ -366,25 +366,25 @@ export default function DiscordLinkPage() {
             Sua conta do <span className="font-semibold text-white">Discord</span> foi conectada a{" "}
             <span className="font-semibold text-white">Wyze Bank</span>
           </h1>
-          {sessionUser?.username ? (
+          <p className="text-[15px] leading-relaxed text-white/60 max-w-[350px] mx-auto">
+            Você pode fechar esta janela e voltar para o Discord.
+          </p>
+                    {sessionUser?.username ? (
             <p className="text-[14px] leading-relaxed text-white/70">
               Usuário: <span className="text-white">{sessionUser.username}</span>
             </p>
           ) : null}
-          <p className="text-[15px] leading-relaxed text-white/60 max-w-[350px] mx-auto">
-            Você pode fechar esta janela e voltar para o Discord.
-          </p>
         </div>
       </section>
 
       <footer
         className="
-          relative z-10 mt-16 w-full max-w-[420px]
+          relative z-10   w-full max-w-[420px]
           flex flex-col items-center text-center text-[12px] leading-relaxed text-white/40
         "
       >
-        <div className="h-px w-full max-w-[600px] bg-white/5 mb-4" />
-        <p className="max-w-[450px]">
+        <div className="h-px w-full max-w-[600px] bg-white/5 mb-4 opacity-70" />
+        <p className="max-w-[450px] opacity-50">
           Todos os direitos reservados ® 2025 Wyze Bank. Ao continuar, você concorda com nossos{" "}
           <a
             href="https://support.wyzecode.com/docs/terms-service"
