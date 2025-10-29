@@ -83,7 +83,6 @@ function rawDecryptDoc(encrypted: string | null | undefined): string | null {
      Ex: 12345678900 -> "123.4*******"
 -------------------------------------------------- */
 function maskCpf(cpfDigits: string): string {
-  // segurança extra
   if (!/^\d{11}$/.test(cpfDigits)) return "—";
 
   const first3 = cpfDigits.slice(0, 3); // "123"
@@ -97,7 +96,6 @@ function maskCnpj(cnpjDigits: string): string {
 
   const first2 = cnpjDigits.slice(0, 2); // "51"
   const next3 = cnpjDigits.slice(2, 5); // "601"
-
   return `${first2}.${next3}.***/*******`;
 }
 
@@ -110,11 +108,9 @@ function maskDocSmart(docDigits: string | null): string {
   if (!docDigits) return "—";
 
   if (docDigits.length === 11) {
-    // CPF
     return maskCpf(docDigits);
   }
   if (docDigits.length === 14) {
-    // CNPJ
     return maskCnpj(docDigits);
   }
 
@@ -135,11 +131,9 @@ function maskDocSmart(docDigits: string | null): string {
 function maskPhoneLast5(originalPhone: string | null | undefined): string {
   if (!originalPhone || typeof originalPhone !== "string") return "—";
 
-  // vamos substituir só dígitos, do fim pro começo, os últimos 5
   const chars = originalPhone.split("");
-  let digitsSeen = 0;
 
-  // contamos quantos dígitos existem total
+  // conta total de dígitos no telefone
   const totalDigits = originalPhone.replace(/\D/g, "").length;
   const cutoff = totalDigits - 5; // até aqui mantém real, depois mascara
 
@@ -147,7 +141,6 @@ function maskPhoneLast5(originalPhone: string | null | undefined): string {
   for (let i = 0; i < chars.length; i++) {
     if (/\d/.test(chars[i])) {
       if (digitIndex >= cutoff) {
-        // estamos nos últimos 5 dígitos
         chars[i] = "*";
       }
       digitIndex++;
@@ -191,8 +184,8 @@ function logDbErrorOnce(err: unknown) {
    getUserFromSession
    - valida o cookie/JWT
    - busca o usuário no banco
-   - descriptografa cpf_or_cnpj, mascara como você pediu
-   - mascara telefone (últimos 5 dígitos *)
+   - descriptografa cpf_or_cnpj, mascara
+   - mascara telefone
    - retorna dados prontos pro cliente
 -------------------------------------------------- */
 async function getUserFromSession(): Promise<UserRow> {
@@ -208,7 +201,7 @@ async function getUserFromSession(): Promise<UserRow> {
   let decoded: any;
   try {
     decoded = jwt.verify(
-      session,
+      session!,
       process.env.JWT_SECRET || "supersecretkey"
     );
   } catch (err) {
@@ -243,13 +236,13 @@ async function getUserFromSession(): Promise<UserRow> {
 
     const row = result[0];
 
-    // 1) descriptografa doc cru
+    // descriptografa doc cru
     const plainDocDigits = rawDecryptDoc(row.cpf_or_cnpj);
 
-    // 2) gera versão mascarada do CPF/CNPJ conforme pedido
+    // versão mascarada do CPF/CNPJ
     const maskedDoc = maskDocSmart(plainDocDigits);
 
-    // 3) mascara telefone (últimos 5 dígitos *)
+    // mascara telefone
     const maskedPhone = maskPhoneLast5(row.phone);
 
     return {
@@ -275,7 +268,7 @@ async function getUserFromSession(): Promise<UserRow> {
 }
 
 export default async function Page() {
-  // também já pegamos o possível redirect pós-login
+  // redirect pós-login especial
   const cookieStore = await cookies();
   const postLoginRedirect =
     cookieStore.get("wzb_postlogin_redirect")?.value || "";
@@ -295,6 +288,7 @@ export default async function Page() {
   // manda tudo pro client (já mascarado)
   return (
     <DashClient
+      userId={user.id || 0} // <-- AGORA PASSAMOS userId
       userName={user.name || "Usuário"}
       userEmail={user.email || "indisponível@wyze"}
       userCpfOrCnpj={user.cpf_or_cnpj || "—"} // CPF: "000.0*******" / CNPJ: "51.601.***/*******"
