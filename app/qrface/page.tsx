@@ -1,11 +1,6 @@
 "use client";
 
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 type TokenStatus =
   | "unknown"
@@ -20,13 +15,13 @@ export default function QRFacePage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // sessão do QR (JWT curto assinado pelo backend)
+  // sessão do QR (ticket curto JWT que veio na URL)
   const [sessionTicket, setSessionTicket] = useState<string | null>(null);
 
-  // estado da sessão no servidor
+  // status da sessão no servidor
   const [tokenStatus, setTokenStatus] = useState<TokenStatus>("unknown");
 
-  // preview da selfie já recebida
+  // preview da selfie já recebida (remoto ou local)
   const [selfiePreview, setSelfiePreview] = useState<string | null>(null);
 
   // câmera / captura
@@ -42,83 +37,78 @@ export default function QRFacePage() {
   const [capturing, setCapturing] = useState(false);
   const [done, setDone] = useState(false);
 
-  // mensagem de erro/alerta visível pro usuário
+  // mensagem de erro/alerta
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // ===========================================================
-  // 1. Ler ?session=... da URL e validar com backend
+  // 1. Ler sessionTicket da URL e validar com backend
   // ===========================================================
   useEffect(() => {
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      const rawSession = sp.get("session");
+    const sp = new URLSearchParams(window.location.search);
+    const rawSession = sp.get("session");
 
-      if (!rawSession) {
-        setErrorMsg("Link inválido.");
-        setTokenStatus("expired");
-        setDone(true);
-        return;
-      }
-
-      setSessionTicket(rawSession);
-
-      // valida no backend
-      (async () => {
-        try {
-          const res = await fetch(
-            `/api/qrface?session=${encodeURIComponent(rawSession)}`
-          );
-          const data = await res.json();
-
-          if (!res.ok) {
-            setErrorMsg(
-              data.error ||
-                "Sessão inválida ou expirada. Gere um novo QR pelo app."
-            );
-            setTokenStatus("expired");
-            setDone(true);
-            return;
-          }
-
-          const currentStatus: TokenStatus =
-            data.status === "pending_face"
-              ? "pending_face"
-              : data.status === "face_captured"
-              ? "face_captured"
-              : data.status === "expired"
-              ? "expired"
-              : data.status === "blocked"
-              ? "blocked"
-              : data.status === "validated"
-              ? "validated"
-              : "unknown";
-
-          setTokenStatus(currentStatus);
-
-          // Se já veio capturada do servidor
-          if (currentStatus === "face_captured" && data.selfie_b64) {
-            setSelfiePreview(data.selfie_b64);
-            setDone(true);
-          }
-
-          // Se expirou
-          if (currentStatus === "expired") {
-            setErrorMsg("Esse QR expirou. Gere outro QR no app.");
-            setDone(true);
-          }
-        } catch (netErr) {
-          console.error("Erro ao validar sessão inicial:", netErr);
-          setErrorMsg("Erro de rede. Abra o QR novamente no app.");
-          setTokenStatus("expired");
-          setDone(true);
-        }
-      })();
-    } catch (err) {
-      console.error("Falha lendo session da URL:", err);
+    if (!rawSession) {
       setErrorMsg("Link inválido.");
       setTokenStatus("expired");
       setDone(true);
+      return;
     }
+
+    setSessionTicket(rawSession);
+
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/qrface?session=${encodeURIComponent(rawSession)}`,
+          {
+            method: "GET",
+            cache: "no-store",
+          }
+        );
+        const data = await res.json();
+
+        if (!res.ok) {
+          setErrorMsg(
+            data.error ||
+              "Sessão inválida ou expirada. Gere um novo QR pelo app."
+          );
+          setTokenStatus("expired");
+          setDone(true);
+          return;
+        }
+
+        const currentStatus: TokenStatus =
+          data.status === "pending_face"
+            ? "pending_face"
+            : data.status === "face_captured"
+            ? "face_captured"
+            : data.status === "expired"
+            ? "expired"
+            : data.status === "blocked"
+            ? "blocked"
+            : data.status === "validated"
+            ? "validated"
+            : "unknown";
+
+        setTokenStatus(currentStatus);
+
+        // se já tem selfie no banco (talvez o cara reabriu o link depois)
+        if (currentStatus === "face_captured" && data.selfie_b64) {
+          setSelfiePreview(data.selfie_b64);
+          setDone(true);
+        }
+
+        if (currentStatus === "expired") {
+          setErrorMsg("Esse QR expirou. Gere outro QR no app.");
+          setDone(true);
+        }
+      } catch (netErr) {
+        console.error("Erro ao validar sessão inicial:", netErr);
+        setErrorMsg("Erro de rede. Abra o QR novamente no app.");
+        setTokenStatus("expired");
+        setDone(true);
+      }
+    })();
   }, []);
 
   // ===========================================================
@@ -128,7 +118,6 @@ export default function QRFacePage() {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    // coloca o stream dentro da tag <video>
     videoEl.srcObject = media;
 
     const tryPlay = () => {
@@ -138,7 +127,7 @@ export default function QRFacePage() {
         .then(() => {
           setCameraReady(true);
           setCameraTryingPlay(false);
-          // se conseguiu tocar, não precisamos mais dessa msg
+          // limpa msg "toque no vídeo..." se ela era o erro atual
           setErrorMsg((msg) =>
             msg ===
             "Toque no vídeo para liberar a câmera se ela estiver preta."
@@ -147,8 +136,8 @@ export default function QRFacePage() {
           );
         })
         .catch((err) => {
-          console.warn("Falha ao dar play no vídeo automaticamente:", err);
-          // iOS Safari muitas vezes só toca depois do toque manual
+          console.warn("Falha ao dar play automático:", err);
+          // iOS Safari precisa de interação do usuário
           setCameraReady(false);
           setCameraTryingPlay(false);
           setErrorMsg(
@@ -158,10 +147,8 @@ export default function QRFacePage() {
     };
 
     if (videoEl.readyState >= 1) {
-      // metadata já carregada? tenta direto
       tryPlay();
     } else {
-      // espera metadata
       const onLoadedMetadata = () => {
         videoEl.removeEventListener("loadedmetadata", onLoadedMetadata);
         tryPlay();
@@ -171,24 +158,19 @@ export default function QRFacePage() {
   }, []);
 
   // ===========================================================
-  // 3. Pedir permissão da câmera (chamado ao clicar no botão)
+  // 3. Pedir permissão da câmera (botão "Ativar câmera")
+  //    Agora deixamos pedir mesmo se tokenStatus ainda tá "unknown"
+  //    Só bloqueia se já sabemos que expirou/bloqueou.
   // ===========================================================
   const requestCameraAccess = useCallback(async () => {
-    // evita spam múltiplo
     if (askingPermission || capturing) return;
-    // se já finalizou fluxo, não precisa
     if (done) return;
 
-    // precisa ter sessão válida minimamente
     if (!sessionTicket) {
       setErrorMsg("Sessão não encontrada. Abra o QR de novo pelo app.");
       return;
     }
 
-    // REGRA IMPORTANTE:
-    // antes a gente bloqueava se tokenStatus !== "pending_face".
-    // Agora: permitimos também quando ainda está "unknown".
-    // Bloqueamos só se já sabemos que NÃO vale (expired/blocked/etc).
     const sessionIsClearlyInvalid =
       tokenStatus === "expired" ||
       tokenStatus === "blocked" ||
@@ -197,20 +179,17 @@ export default function QRFacePage() {
       done;
 
     if (sessionIsClearlyInvalid) {
-      setErrorMsg(
-        "Esse QR não está mais ativo. Gere outro QR no app."
-      );
+      setErrorMsg("Esse QR não está mais ativo. Gere outro QR no app.");
       return;
     }
 
-    // beleza, vamos tentar abrir câmera
     setErrorMsg(null);
     setAskingPermission(true);
     setPermissionAsked(true);
 
-    // função que tenta frontal e cai pro fallback
     async function getMediaFrontFirstThenFallback() {
       try {
+        // tenta câmera frontal
         const mediaFront = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "user" },
@@ -221,9 +200,8 @@ export default function QRFacePage() {
         });
         return mediaFront;
       } catch {
-        // se frontal falhou (desktop / device sem frontal), tenta genérico
+        // se frontal falhou (desktop, etc), tenta qualquer camera
       }
-
       const mediaAny = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: false,
@@ -233,17 +211,13 @@ export default function QRFacePage() {
 
     try {
       const media = await getMediaFrontFirstThenFallback();
-
-      // se o user negou, media vai dar throw acima
       setStream(media);
 
-      // tenta mostrar o preview
       await attachStreamToVideo(media);
     } catch (err) {
       console.error("Erro ao acessar câmera:", err);
       setCameraReady(false);
 
-      // HTTPS obrigatório em mobile real (exceto localhost)
       const insecure =
         typeof window !== "undefined" &&
         window.location.protocol !== "https:" &&
@@ -261,14 +235,7 @@ export default function QRFacePage() {
     } finally {
       setAskingPermission(false);
     }
-  }, [
-    askingPermission,
-    capturing,
-    done,
-    sessionTicket,
-    tokenStatus,
-    attachStreamToVideo,
-  ]);
+  }, [askingPermission, capturing, done, sessionTicket, tokenStatus, attachStreamToVideo]);
 
   // ===========================================================
   // 4. Cleanup: parar a câmera ao sair da tela
@@ -308,12 +275,15 @@ export default function QRFacePage() {
   }
 
   // ===========================================================
-  // 6. Capturar frame e enviar pro backend
+  // 6. Capturar frame atual e enviar para o backend via PUT
+  //    Depois disso:
+  //    - seta selfiePreview local
+  //    - marca sessão como concluída
+  //    - para câmera
   // ===========================================================
   async function handleCaptureAndSend() {
     if (done) return;
 
-    // sessão ainda válida?
     if (
       tokenStatus === "expired" ||
       tokenStatus === "blocked" ||
@@ -354,14 +324,13 @@ export default function QRFacePage() {
     canvasEl.width = w;
     canvasEl.height = h;
     const ctx = canvasEl.getContext("2d");
-
     if (!ctx) {
       setCapturing(false);
       setErrorMsg("Erro interno de captura.");
       return;
     }
 
-    // espelhar estilo selfie (horizontal flip)
+    // espelha igual selfie (flip horizontal)
     ctx.save();
     ctx.scale(-1, 1);
     ctx.drawImage(videoEl, -w, 0, w, h);
@@ -373,6 +342,7 @@ export default function QRFacePage() {
       const resp = await fetch("/api/qrface", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        cache: "no-store",
         body: JSON.stringify({
           session: sessionTicket,
           selfieDataUrl: dataUrl,
@@ -388,12 +358,12 @@ export default function QRFacePage() {
         return;
       }
 
-      // sucesso → congela
+      // sucesso → trava e mostra preview
       setSelfiePreview(data.selfiePreview || dataUrl);
       setTokenStatus("face_captured");
       setDone(true);
 
-      // corta câmera por segurança
+      // corta a câmera (privacidade / economia)
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
       }
@@ -408,8 +378,6 @@ export default function QRFacePage() {
   // ===========================================================
   // 7. UI helpers
   // ===========================================================
-
-  // flag derivada: sessão já não vale mais pra capturar?
   const sessionIsClearlyInvalid =
     tokenStatus === "expired" ||
     tokenStatus === "blocked" ||
@@ -417,21 +385,21 @@ export default function QRFacePage() {
     tokenStatus === "face_captured" ||
     done;
 
-  // pode clicar em "Ativar câmera"?
   const canAskCameraNow =
-    !!sessionTicket && !sessionIsClearlyInvalid && !askingPermission && !capturing;
+    !!sessionTicket &&
+    !sessionIsClearlyInvalid &&
+    !askingPermission &&
+    !capturing;
 
   function FaceMaskOverlay() {
     if (selfiePreview) return null;
     if (sessionIsClearlyInvalid) return null;
-    // só mostra a moldura se a ideia é capturar o rosto agora
     return (
       <div
         className="pointer-events-none absolute inset-0 flex items-center justify-center"
         aria-hidden="true"
       >
         <div className="relative w-[220px] h-[300px]">
-          {/* moldura verde com glow */}
           <div
             className="
               absolute inset-0
@@ -440,7 +408,6 @@ export default function QRFacePage() {
               shadow-[0_0_30px_rgba(38,255,89,0.55),0_0_70px_rgba(38,255,89,0.25)]
             "
           />
-          {/* vinheta escurecendo fora do rosto */}
           <div
             className="
               absolute -inset-[100px]
@@ -468,10 +435,8 @@ export default function QRFacePage() {
       );
     }
 
-    // câmera já está tocando
     if (cameraReady) return null;
 
-    // ainda não clicou em "Ativar câmera"
     if (!permissionAsked) {
       return (
         <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] text-white/90 py-2 px-3 leading-snug">
@@ -480,7 +445,6 @@ export default function QRFacePage() {
       );
     }
 
-    // clicou, estamos pedindo
     if (askingPermission) {
       return (
         <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] text-white/90 py-2 px-3 leading-snug">
@@ -489,7 +453,6 @@ export default function QRFacePage() {
       );
     }
 
-    // permissão já pedida mas autoplay ainda não rolou
     return (
       <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] text-white/90 py-2 px-3 leading-snug">
         {cameraTryingPlay
@@ -500,7 +463,6 @@ export default function QRFacePage() {
   }
 
   function renderCameraBlock() {
-    // depois que já capturou -> mostra selfie congelada
     if (selfiePreview) {
       return (
         <div className="relative w-[320px] max-w-full h-[400px] rounded-2xl overflow-hidden ring-2 ring-[#26FF59]/60 shadow-[0_0_40px_#26FF5966] bg-neutral-900 flex items-center justify-center">
@@ -516,7 +478,6 @@ export default function QRFacePage() {
       );
     }
 
-    // antes de capturar -> preview da câmera
     return (
       <div className="relative w-[320px] max-w-full h-[400px] flex items-center justify-center rounded-2xl overflow-hidden ring-1 ring-white/10 bg-black">
         <video
@@ -525,7 +486,6 @@ export default function QRFacePage() {
           playsInline
           autoPlay
           muted
-          // Safari iOS: o toque direto no vídeo conta como interação de usuário
           onClick={handleManualPlay}
         />
         <FaceMaskOverlay />
@@ -535,7 +495,6 @@ export default function QRFacePage() {
   }
 
   function renderActionArea() {
-    // já finalizamos
     if (selfiePreview || tokenStatus === "face_captured" || done) {
       return (
         <div className="text-center text-[0.8rem] text-white/70 leading-relaxed px-4">
@@ -544,7 +503,6 @@ export default function QRFacePage() {
       );
     }
 
-    // sessão claramente inválida
     if (sessionIsClearlyInvalid) {
       return (
         <div className="text-center text-[0.8rem] text-red-400 leading-relaxed px-4">
@@ -553,7 +511,6 @@ export default function QRFacePage() {
       );
     }
 
-    // se AINDA não pedimos permissão pra câmera → botão "Ativar câmera"
     if (!permissionAsked) {
       return (
         <button
@@ -571,25 +528,24 @@ export default function QRFacePage() {
       );
     }
 
-    // já pedimos permissão -> botão "Capturar e enviar"
     return (
-        <button
-          onClick={handleCaptureAndSend}
-          disabled={
-            !cameraReady ||
-            capturing ||
-            !sessionTicket ||
-            sessionIsClearlyInvalid
-          }
-          className={[
-            "w-full rounded-md py-3 text-[0.9rem] font-semibold tracking-[-0.02em]",
-            "bg-[#26FF59] text-black shadow-[0_0_20px_rgba(38,255,89,0.6)]",
-            "active:scale-[0.99] transition-all",
-            "disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none",
-          ].join(" ")}
-        >
-          {capturing ? "Enviando..." : "Capturar e enviar"}
-        </button>
+      <button
+        onClick={handleCaptureAndSend}
+        disabled={
+          !cameraReady ||
+          capturing ||
+          !sessionTicket ||
+          sessionIsClearlyInvalid
+        }
+        className={[
+          "w-full rounded-md py-3 text-[0.9rem] font-semibold tracking-[-0.02em]",
+          "bg-[#26FF59] text-black shadow-[0_0_20px_rgba(38,255,89,0.6)]",
+          "active:scale-[0.99] transition-all",
+          "disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none",
+        ].join(" ")}
+      >
+        {capturing ? "Enviando..." : "Capturar e enviar"}
+      </button>
     );
   }
 
@@ -608,7 +564,7 @@ export default function QRFacePage() {
 
         {renderCameraBlock()}
 
-        {/* canvas escondido só pra capturar frame JPEG */}
+        {/* canvas escondido pra capturar frame jpeg */}
         <canvas ref={canvasRef} className="hidden" />
 
         {errorMsg && (

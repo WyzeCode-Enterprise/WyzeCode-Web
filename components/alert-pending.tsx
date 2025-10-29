@@ -62,7 +62,10 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
-function saveImagesToLocalStorage(frontB64: string | null, backB64: string | null) {
+function saveImagesToLocalStorage(
+  frontB64: string | null,
+  backB64: string | null
+) {
   if (typeof window === "undefined") return;
   try {
     if (frontB64) localStorage.setItem(FRONT_KEY, frontB64);
@@ -108,7 +111,7 @@ function removeBackFromLocalStorage() {
 }
 
 /* -------------------------------------------------
-   Cartão amarelo que aparece no dashboard principal
+   Cartão amarelo que aparece no dashboard
 -------------------------------------------------- */
 export function AlertPending({
   onVerify,
@@ -143,8 +146,8 @@ export function AlertPending({
 
           <p className="max-w-[120ch] text-[13px] leading-relaxed text-yellow-200/70 sm:text-[14px]">
             Valide seu documento e sua idade para ativar o Wyze Bank. Sem essa
-            etapa, sua conta permanece limitada ao Wyze Bank Pay e fica sujeita a
-            limites de uso e possível retenção de saldo.
+            etapa, sua conta permanece limitada ao Wyze Bank Pay e fica sujeita
+            a limites de uso e possível retenção de saldo.
           </p>
         </div>
 
@@ -166,7 +169,7 @@ export function AlertPending({
         </div>
       </div>
 
-      {/* Botão desktop (absoluto no canto) */}
+      {/* Botão desktop (canto do card) */}
       <button
         type="button"
         onClick={onVerify}
@@ -207,7 +210,7 @@ function UploadModal({
   const [frontPreview, setFrontPreview] = React.useState<string | null>(null);
   const [backPreview, setBackPreview] = React.useState<string | null>(null);
 
-  // quando abre, carrega previews que já existem
+  // ao abrir, carrega as imagens pré-confirmadas
   React.useEffect(() => {
     if (open) {
       setFrontPreview(initialFrontB64 || null);
@@ -217,7 +220,7 @@ function UploadModal({
     }
   }, [open, initialFrontB64, initialBackB64]);
 
-  // gera preview local pra frente
+  // preview local da frente
   React.useEffect(() => {
     if (frontFile) {
       const url = URL.createObjectURL(frontFile);
@@ -225,7 +228,7 @@ function UploadModal({
     }
   }, [frontFile]);
 
-  // gera preview local pra verso
+  // preview local do verso
   React.useEffect(() => {
     if (backFile) {
       const url = URL.createObjectURL(backFile);
@@ -267,8 +270,8 @@ function UploadModal({
             Enviar documento
           </div>
           <div className="text-[14px] leading-relaxed text-muted-foreground">
-            Envie frente e verso do seu documento oficial com foto.
-            Precisa estar nítido, sem corte e sem dedo cobrindo dado.
+            Envie frente e verso do seu documento oficial com foto. Precisa
+            estar nítido, sem corte e sem dedo cobrindo dado.
           </div>
         </div>
 
@@ -405,7 +408,8 @@ function UploadModal({
 }
 
 /* -------------------------------------------------
-   Drawer principal (documento + selfie via QR)
+   Drawer principal (documento + selfie/QR)
+   -> aqui rola o bootstrapQRSession e o polling realtime
 -------------------------------------------------- */
 function VerifyDocumentsDrawer({
   open,
@@ -424,7 +428,7 @@ function VerifyDocumentsDrawer({
 }) {
   const isMobile = useIsMobile();
 
-  // documento confirmado (previews)
+  // documento confirmado
   const [frontConfirmed, setFrontConfirmed] = React.useState<string | null>(
     null
   );
@@ -433,16 +437,14 @@ function VerifyDocumentsDrawer({
 
   // sessão QR / prova de vida
   const [qrUrl, setQrUrl] = React.useState<string | null>(null); // link https://wyzebank.com/qrface?session=...
-  const [sessionTicket, setSessionTicket] = React.useState<string | null>(null); // o JWT curto "session"
+  const [sessionTicket, setSessionTicket] = React.useState<string | null>(null); // token curto
   const [qrLoading, setQrLoading] = React.useState(false);
   const [qrError, setQrError] = React.useState<string | null>(null);
 
-  // selfie recebida pelo celular
+  // selfie recebida do celular
   const [selfiePreview, setSelfiePreview] = React.useState<string | null>(null);
 
-  // ============================
-  // 1. carregar as imagens doc salvas no localStorage sempre que abrir
-  // ============================
+  // 1. carregar imagens do documento do localStorage sempre que o drawer abre
   React.useEffect(() => {
     if (!open) return;
     const { front, back } = loadImagesFromLocalStorage();
@@ -450,13 +452,8 @@ function VerifyDocumentsDrawer({
     if (back) setBackConfirmed(back);
   }, [open]);
 
-  // ============================
-  // 2. bootstrapQRSession:
-  //    - chama POST /api/qrface
-  //    - backend autentica via cookie wzb_lg (mesma sessão do login)
-  //    - devolve { session, url, selfie_b64, status }
-  //    - se status === "face_captured", já temos selfie_b64
-  // ============================
+  // 2. criar/reusar sessão do QR (chama POST /api/qrface)
+  //    isso também já traz selfie_b64 se ela já existia
   const bootstrapQRSession = React.useCallback(async () => {
     try {
       setQrLoading(true);
@@ -465,6 +462,7 @@ function VerifyDocumentsDrawer({
       const resp = await fetch("/api/qrface", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        cache: "no-store",
       });
 
       const data = await resp.json();
@@ -476,17 +474,17 @@ function VerifyDocumentsDrawer({
         return;
       }
 
-      // salva ticket da sessão (JWT curto que identifica essa selfie session)
+      // salva ticket curto (vai ser usado no polling GET /api/qrface?session=...)
       setSessionTicket(data.session || null);
 
-      // salva URL bruta do QR (essa URL que vai pro celular)
+      // salva URL bruta pra gerar o QR visual
       setQrUrl(data.url || null);
 
-      // se já tem selfie pronta do servidor, mostra direto e nem exibe QR
+      // se já tem selfie salva no banco, já mostra a foto no lugar do QR
       if (data.status === "face_captured" && data.selfie_b64) {
         setSelfiePreview(data.selfie_b64);
       } else {
-        // se ainda não tem selfie, garante que a prévia tá vazia
+        // se ainda não tem selfie, garante que está vazio
         setSelfiePreview(null);
       }
 
@@ -498,31 +496,26 @@ function VerifyDocumentsDrawer({
     }
   }, []);
 
-  // ============================
-  // 3. sempre que o Drawer abrir, tenta garantir uma sessão QR viva
-  // ============================
+  // 3. sempre que o Drawer abre, garantir que temos uma sessão QR viva
   React.useEffect(() => {
     if (!open) return;
     bootstrapQRSession();
   }, [open, bootstrapQRSession]);
 
-  // ============================
-  // 4. polling:
-  //    enquanto NÃO temos selfiePreview,
-  //    e temos sessionTicket,
-  //    vamos batendo em GET /api/qrface?session=...
-  //
-  //    se vier { status: "face_captured", selfie_b64 }, atualiza selfiePreview
-  //    e para.
-  //
-  //    se status: "expired" sem selfie => QR expirou.
-  //      -> chamamos bootstrapQRSession() pra gerar novo QR
-  // ============================
+  // 4. polling realtime:
+  //    - só roda enquanto AINDA não temos selfiePreview
+  //    - fica chamando GET /api/qrface?session=<sessionTicket>
+  //    - quando o celular mandar PUT /api/qrface e o banco receber selfie_b64,
+  //      o GET começa a devolver { status:"face_captured", selfie_b64:"data:image/..." }
+  //      -> a gente faz setSelfiePreview(...) e o QR some na UI.
+  //    - se status vier "expired" sem selfie_b64 -> QR expirou.
+  //      chamamos bootstrapQRSession() pra gerar um novo QR automaticamente.
   React.useEffect(() => {
     if (!open) return;
     if (!sessionTicket) return;
     if (selfiePreview) return;
 
+    // salva o ticket dessa rodada pra evitar race
     const myTicket = sessionTicket;
     let intervalId: any;
 
@@ -530,7 +523,10 @@ function VerifyDocumentsDrawer({
       try {
         const res = await fetch(
           `/api/qrface?session=${encodeURIComponent(myTicket)}`,
-          { method: "GET" }
+          {
+            method: "GET",
+            cache: "no-store",
+          }
         );
         const data = await res.json();
 
@@ -539,23 +535,24 @@ function VerifyDocumentsDrawer({
           return;
         }
 
-        // se a selfie chegou → atualiza preview e para o polling
+        // se já capturou selfie remotamente
         if (data.status === "face_captured" && data.selfie_b64) {
           setSelfiePreview(data.selfie_b64);
-          return;
+          return; // depois disso, o efeito vai re-renderizar e parar o polling
         }
 
-        // se expirou sem selfie, QR ficou velho -> gerar uma nova sessão
+        // QR expirou sem selfie -> gerar outro QR automaticamente
         if (data.status === "expired" && !data.selfie_b64) {
           console.warn("Sessão expirou sem selfie, criando outra...");
-          bootstrapQRSession();
+          bootstrapQRSession(); // isso vai atualizar sessionTicket e qrUrl
         }
       } catch (err) {
         console.warn("Polling falhou:", err);
       }
     }
 
-    poll(); // dispara já na primeira abertura
+    // roda agora e depois em loop
+    poll();
     intervalId = setInterval(poll, 2500);
 
     return () => {
@@ -563,10 +560,11 @@ function VerifyDocumentsDrawer({
     };
   }, [open, sessionTicket, selfiePreview, bootstrapQRSession]);
 
-  // ============================
-  // helpers do modal de upload
-  // ============================
-  function handleConfirmUpload(finalFrontB64: string | null, finalBackB64: string | null) {
+  // helpers modal upload
+  function handleConfirmUpload(
+    finalFrontB64: string | null,
+    finalBackB64: string | null
+  ) {
     setFrontConfirmed(finalFrontB64);
     setBackConfirmed(finalBackB64);
     saveImagesToLocalStorage(finalFrontB64, finalBackB64);
@@ -589,24 +587,20 @@ function VerifyDocumentsDrawer({
     removeBackFromLocalStorage();
   }
 
-  // ============================
-  // envio final pro KYC (futuro)
-  // ============================
+  // envio final do KYC (ainda mock)
   function handleSubmitDocument() {
     console.log("Enviar para KYC:", {
       frente: frontConfirmed,
       verso: backConfirmed,
       selfiePreview,
-      sessionTicket, // se quiser auditar qual sessão facial foi usada
+      sessionTicket, // pra auditoria se quiser
     });
 
-    // aqui depois você chama sua rota final de submissão:
-    // fetch("/api/kyc-submit", { method: "POST", body: JSON.stringify(...)} )
+    // chamar sua rota final ex:
+    // fetch("/api/kyc-submit", {...})
   }
 
-  // ============================
-  // impedir fechar o Drawer se modal interno (upload) tá aberto
-  // ============================
+  // bloquear fechar drawer se modal de upload tá aberto
   function handleDrawerOpenChange(next: boolean) {
     if (!next && uploadModalOpen) return;
     onOpenChange(next);
@@ -617,12 +611,9 @@ function VerifyDocumentsDrawer({
   const email = user?.email || "indisponível@wyzebank.com";
   const phone = user?.phone || "—";
 
-  // ============================
-  // RENDER
-  // ============================
   return (
     <>
-      {/* Modal de upload (sobreposto) */}
+      {/* Modal de upload documento */}
       <UploadModal
         open={uploadModalOpen}
         onClose={handleCloseUploadModal}
@@ -653,13 +644,14 @@ function VerifyDocumentsDrawer({
               Verificação de Identidade
             </DrawerTitle>
             <DrawerDescription className="text-[15px] leading-relaxed text-muted-foreground">
-              Para liberar limites maiores (PIX, cartão etc.), confirme quem é você.
-              Envie um documento oficial com foto e valide sua selfie em tempo real.
+              Para liberar limites maiores (PIX, cartão etc.), confirme quem é
+              você. Envie um documento oficial com foto e valide sua selfie em
+              tempo real.
             </DrawerDescription>
           </DrawerHeader>
 
           <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-4 text-sm sm:px-6">
-            {/* DADOS PESSOAIS (somente leitura / mascarados) */}
+            {/* DADOS PESSOAIS */}
             <div className="grid gap-4 text-[13px] leading-relaxed">
               <div className="grid grid-cols-2 gap-4">
                 {/* Nome */}
@@ -670,7 +662,7 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={displayName}
-                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default user-none"
+                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
                   />
                 </div>
 
@@ -682,7 +674,7 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={cpfOrCnpj}
-                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default user-none"
+                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
                   />
                 </div>
               </div>
@@ -696,7 +688,7 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={email}
-                    className="w-full break-all rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default user-none"
+                    className="w-full break-all rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
                   />
                 </div>
 
@@ -708,7 +700,7 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={phone}
-                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default user-none"
+                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
                   />
                 </div>
               </div>
@@ -716,7 +708,7 @@ function VerifyDocumentsDrawer({
 
             <Separator />
 
-            {/* DOCUMENTO ENVIADO (frente/verso) */}
+            {/* DOCUMENTO ENVIADO */}
             <div className="grid gap-2">
               <div className="text-[16px] font-medium text-foreground">
                 Documento enviado
@@ -833,8 +825,8 @@ function VerifyDocumentsDrawer({
 
               <div className="text-[14px] leading-snug text-muted-foreground">
                 Agora precisamos confirmar que você é realmente você.
-                Aponte a câmera do seu celular para o QR abaixo e siga
-                as instruções para validar seu rosto em tempo real.
+                Aponte a câmera do seu celular para o QR abaixo e siga as
+                instruções para validar seu rosto em tempo real.
               </div>
 
               <div
@@ -860,7 +852,7 @@ function VerifyDocumentsDrawer({
                     </div>
                   )}
 
-                  {/* estado 3: selfie já recebida */}
+                  {/* estado 3: selfie já recebida -> mostra FOTO na UI do dashboard */}
                   {selfiePreview && (
                     <img
                       src={selfiePreview}
@@ -869,7 +861,7 @@ function VerifyDocumentsDrawer({
                     />
                   )}
 
-                  {/* estado 4: exibir QRCode (imagem gerada a partir da URL de sessão) */}
+                  {/* estado 4: mostrar QRCode enquanto NÃO chegou selfiePreview */}
                   {!qrLoading && !qrError && !selfiePreview && qrUrl && (
                     <img
                       src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
@@ -880,7 +872,7 @@ function VerifyDocumentsDrawer({
                     />
                   )}
 
-                  {/* fallback final se nada carregou */}
+                  {/* fallback se não carregou nada */}
                   {!qrLoading && !qrError && !selfiePreview && !qrUrl && (
                     <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[10px] font-semibold text-neutral-400 ring-1 ring-border">
                       QR CODE
@@ -898,6 +890,10 @@ function VerifyDocumentsDrawer({
           </div>
 
           <DrawerFooter className="gap-2 px-4 pb-4 pt-0 sm:px-6">
+            {/* botão de envio final só habilita se:
+               - frente doc
+               - verso doc
+               - selfie já recebida */}
             <Button
               size="sm"
               className={cn(
@@ -928,7 +924,8 @@ function VerifyDocumentsDrawer({
 }
 
 /* -------------------------------------------------
-   Wrapper que vai dentro do dashboard
+   Wrapper usado no dashboard
+   -> você passa o user logado pra ele
 -------------------------------------------------- */
 export function VerifyDocumentsSection({
   user,
