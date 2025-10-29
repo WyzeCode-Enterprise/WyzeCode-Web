@@ -11,7 +11,9 @@ import { VerifyDocumentsSection } from "@/components/alert-pending";
 import data from "../dash/data.json";
 import { useAuth } from "../hooks/useAuth";
 
+// props que vêm do server (/dash/page.tsx)
 interface DashClientProps {
+  userId: number;          // <-- adicionamos isso
   userName: string;
   userEmail: string;
   userCpfOrCnpj: string;
@@ -20,6 +22,7 @@ interface DashClientProps {
 }
 
 export default function DashClient({
+  userId,
   userName,
   userEmail,
   userCpfOrCnpj,
@@ -28,7 +31,7 @@ export default function DashClient({
 }: DashClientProps) {
   useAuth();
 
-  // corta nome pra não quebrar sidebar
+  // corta nome pra não quebrar sidebar visualmente
   const displayName =
     userName.length > 25 ? userName.slice(0, 25) + "..." : userName;
 
@@ -61,10 +64,11 @@ export default function DashClient({
                 </div>
               )}
 
-              {/* ALERTA + DRAWER CONTROLADO */}
+              {/* BLOCO: verificação de identidade (alert + drawer) */}
               <div className="px-4 lg:px-6">
                 <VerifyDocumentsSection
                   user={{
+                    id: userId,                // <-- agora passamos o ID
                     name: userName,
                     email: userEmail,
                     cpfOrCnpj: userCpfOrCnpj,
@@ -73,7 +77,7 @@ export default function DashClient({
                 />
               </div>
 
-              {/* CARDS principais do dashboard */}
+              {/* cards principais do dashboard */}
               <SectionCards />
 
               {/* gráfico */}
@@ -81,7 +85,7 @@ export default function DashClient({
                 <ChartAreaInteractive />
               </div>
 
-              {/* tabela (ex: atividades recentes) */}
+              {/* tabela (por ex. atividades recentes) */}
               <DataTable data={data} />
             </div>
           </div>
