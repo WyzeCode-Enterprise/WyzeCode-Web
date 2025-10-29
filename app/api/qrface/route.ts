@@ -80,14 +80,51 @@ function signFaceSessionTicket(faceSessionRowId: number) {
 
 /**
  * Valida ticket curto vindo do celular / dashboard
+ *
+ * - Se allowExpired = false (default):
+ *   - JWT expirado => retorna null
+ *
+ * - Se allowExpired = true:
+ *   - JWT expirado => a gente ainda valida assinatura ignorando exp
+ *     e retorna { sid, tokenExpired: true }
+ *
+ * Retorno:
+ *   { sid: number; tokenExpired: boolean } | null
  */
-function verifyFaceSessionTicket(ticket: string | null): { sid: number } | null {
+function verifyFaceSessionTicket(
+  ticket: string | null,
+  opts?: { allowExpired?: boolean }
+): { sid: number; tokenExpired: boolean } | null {
   if (!ticket) return null;
+
   try {
+    // caso feliz: token válido e não expirado
     const decoded = jwt.verify(ticket, FACE_SESSION_SECRET) as any;
     if (!decoded || typeof decoded.sid !== "number") return null;
-    return { sid: decoded.sid };
-  } catch (err) {
+    return { sid: decoded.sid, tokenExpired: false };
+  } catch (err: any) {
+    // Se expirou e eu permito ticket expirado, tento novamente
+    // só ignorando expiração, mas verificando assinatura
+    if (
+      opts?.allowExpired &&
+      err &&
+      (err.name === "TokenExpiredError" || err.constructor?.name === "TokenExpiredError")
+    ) {
+      try {
+        const decoded = jwt.verify(ticket, FACE_SESSION_SECRET, {
+          ignoreExpiration: true,
+        }) as any;
+        if (!decoded || typeof decoded.sid !== "number") return null;
+        return { sid: decoded.sid, tokenExpired: true };
+      } catch (err2) {
+        console.warn(
+          "[qrface] ticket inválido mesmo ignorando expiração:",
+          err2
+        );
+        return null;
+      }
+    }
+
     console.warn("[qrface] ticket inválido/expirado:", err);
     return null;
   }
@@ -130,7 +167,8 @@ function secondsUntilExpiry(expires_at: any): number {
 ------------------------------------------------------------------- */
 
 /**
- * Cria linha filha em face_session_data se não existir ainda
+ * Garante que exista linha filha em face_session_data
+ * (bases antigas podem não ter criado ainda)
  */
 async function ensureFaceSessionDataRow(faceSessionId: number) {
   const [rows] = await db.query(
@@ -259,23 +297,11 @@ function jsonNoStore(body: any, init?: { status?: number }) {
 /* =========================================================================
    POST /api/qrface
    Chamado pelo DASHBOARD logado.
+   - se já existir sessão facial pra esse login_sid, reutiliza
+   - SE ELA TIVER EXPIRADA OU status='expired', RESSUSCITA
+   - se não existe, cria nova
 
-   Fluxo:
-   - pega uid/sid de quem está logado (cookie JWT "wzb_lg")
-   - tenta achar face_sessions pra esse session_sid
-   - se expirou e ainda tava "pending_face", recicla a MESMA linha
-   - se já tem selfie, mantém "face_captured"
-   - se não existe linha, cria nova
-
-   Retorna SEMPRE um objeto com:
-   {
-     success: true,
-     session: "<ticket curto>",          // vai no QR / celular
-     url: "https://.../qrface?session=...", // link completo p/ celular
-     selfie_b64: "...ou null...",
-     status: "pending_face" | "face_captured" | "expired" | ...,
-     expires_in_sec: number
-   }
+   EXTRA: isso evita loop de gerar QR infinito no dashboard.
  ========================================================================= */
 export async function POST(req: NextRequest) {
   try {
@@ -291,14 +317,23 @@ export async function POST(req: NextRequest) {
     let sess = await fetchFaceSessionByLoginSid(sid);
 
     if (sess) {
-      const expired = isExpiredWithGrace(sess.expires_at);
+      const expiredNow = isExpiredWithGrace(sess.expires_at);
 
-      // se expirou e ainda tava pendente (ninguém tirou selfie),
-      // reciclamos a mesma linha
-      if (expired && sess.status === "pending_face") {
+      // Precisamos decidir se vamos reciclar essa linha:
+      // CASO 1: expirou no tempo, ainda tava pendente
+      // CASO 2: o status já está 'expired'
+      //
+      // Antes só reciclava no CASO 1 -> bugava.
+      // Agora reciclamos nos dois.
+      const mustRecycle =
+        (expiredNow && sess.status === "pending_face") ||
+        sess.status === "expired";
+
+      if (mustRecycle) {
         const newInternalToken = generateInternalToken();
         const newWCode = generateWCode();
 
+        // recicla MESMA linha
         await db.query(
           `
             UPDATE face_sessions
@@ -312,6 +347,7 @@ export async function POST(req: NextRequest) {
           [newInternalToken, newWCode, sess.face_session_id]
         );
 
+        // zera selfie da tentativa anterior
         await db.query(
           `
             UPDATE face_session_data
@@ -322,10 +358,8 @@ export async function POST(req: NextRequest) {
           [sess.face_session_id]
         );
 
-        // refetch pra ter os campos atualizados
         const refreshed = await fetchFaceSessionById(sess.face_session_id);
         if (!refreshed) {
-          // não era pra acontecer, mas vamos falhar de forma controlada
           return jsonNoStore(
             { error: "Falha ao renovar sessão facial." },
             { status: 500 }
@@ -334,7 +368,7 @@ export async function POST(req: NextRequest) {
         sess = refreshed;
       }
 
-      // garante linha filha (por segurança em bases antigas)
+      // garante linha filha (segurança p/ bases antigas)
       await ensureFaceSessionDataRow(sess.face_session_id);
 
       // gera o ticket curto pro celular
@@ -431,6 +465,7 @@ export async function POST(req: NextRequest) {
 /* =========================================================================
    PUT /api/qrface
    Chamado PELO CELULAR quando a pessoa captura a selfie.
+   Aqui NÃO aceitamos token expirado.
  ========================================================================= */
 export async function PUT(req: NextRequest) {
   try {
@@ -450,15 +485,18 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const decoded = verifyFaceSessionTicket(session);
-    if (!decoded) {
+    // aqui é estrito: se expirou, rejeita
+    const decodedInfo = verifyFaceSessionTicket(session, {
+      allowExpired: false,
+    });
+    if (!decodedInfo || decodedInfo.tokenExpired) {
       return jsonNoStore(
         { error: "Sessão inválida ou expirada." },
         { status: 400 }
       );
     }
 
-    let sess = await fetchFaceSessionById(decoded.sid);
+    let sess = await fetchFaceSessionById(decodedInfo.sid);
     if (!sess) {
       return jsonNoStore(
         { error: "Sessão não encontrada." },
@@ -466,10 +504,10 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const expired = isExpiredWithGrace(sess.expires_at);
+    const expiredNow = isExpiredWithGrace(sess.expires_at);
 
-    // expirou antes de capturar
-    if (expired && sess.status === "pending_face") {
+    // expirou antes de capturar (timeout da sessão facial)
+    if (expiredNow && sess.status === "pending_face") {
       await db.query(
         `
           UPDATE face_sessions
@@ -538,6 +576,9 @@ export async function PUT(req: NextRequest) {
    Chamado:
    - pelo dashboard (polling) pra ver se já chegou selfie
    - pelo celular logo que abre o link do QR
+   IMPORTANTE:
+   - AGORA aceitamos token expirado, mas devolvemos status "expired" com 200.
+   - Isso faz o front regenerar apenas quando precisa, e para o spam 400.
  ========================================================================= */
 export async function GET(req: NextRequest) {
   try {
@@ -551,15 +592,19 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const decoded = verifyFaceSessionTicket(ticketFromUrl);
-    if (!decoded) {
+    // aqui a gente permite expired pra ter sid e responder "expired" bonitinho
+    const decodedInfo = verifyFaceSessionTicket(ticketFromUrl, {
+      allowExpired: true,
+    });
+    if (!decodedInfo) {
+      // token sem assinatura válida / lixo → 400
       return jsonNoStore(
         { error: "Sessão inválida ou expirada." },
         { status: 400 }
       );
     }
 
-    const sess = await fetchFaceSessionById(decoded.sid);
+    const sess = await fetchFaceSessionById(decodedInfo.sid);
     if (!sess) {
       return jsonNoStore(
         { error: "Sessão não encontrada." },
@@ -569,10 +614,18 @@ export async function GET(req: NextRequest) {
 
     const expiredNow = isExpiredWithGrace(sess.expires_at);
 
-    const effectiveStatus =
-      expiredNow && sess.status === "pending_face"
-        ? "expired"
-        : sess.status;
+    // status efetivo que o front precisa enxergar
+    // regra:
+    // - se o JWT em si já expirou => "expired"
+    // - se a linha está pending_face mas já passou expires_at => "expired"
+    // - senão usa o status real do banco
+    let effectiveStatus = sess.status;
+
+    if (decodedInfo.tokenExpired) {
+      effectiveStatus = "expired";
+    } else if (expiredNow && sess.status === "pending_face") {
+      effectiveStatus = "expired";
+    }
 
     return jsonNoStore({
       success: true,

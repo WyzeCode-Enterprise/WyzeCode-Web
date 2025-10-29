@@ -11,7 +11,6 @@ type TokenStatus =
   | "unknown"
   | "pending_face"
   | "face_captured"
-  | "expired"
   | "blocked"
   | "validated";
 
@@ -45,11 +44,8 @@ export default function QRFacePage() {
   // UX / erros
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // contador de expiração (segundos até expirar)
-  const [expiresInSec, setExpiresInSec] = useState<number | null>(null);
-
   // ==========================================================
-  // 1. bootstrap inicial a partir da URL
+  // 1. bootstrap inicial da sessão a partir da URL (uma vez)
   // ==========================================================
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
@@ -57,7 +53,6 @@ export default function QRFacePage() {
 
     if (!rawSession) {
       setErrorMsg("Link inválido.");
-      setTokenStatus("expired");
       setDone(true);
       return;
     }
@@ -76,98 +71,43 @@ export default function QRFacePage() {
         const data = await res.json();
 
         if (!res.ok) {
+          // mesmo se backend reclamar de "expirada", não vamos travar tudo
+          // só avisamos erro e impedimos captura (done=true)
           setErrorMsg(
             data.error ||
-              "Sessão inválida ou expirada. Gere um novo QR pelo app."
+              "Sessão inválida. Abra novamente o QR pelo app."
           );
-          setTokenStatus("expired");
           setDone(true);
           return;
         }
 
-        const mappedStatus: TokenStatus =
-          data.status === "pending_face"
-            ? "pending_face"
-            : data.status === "face_captured"
-            ? "face_captured"
-            : data.status === "expired"
-            ? "expired"
-            : data.status === "blocked"
-            ? "blocked"
-            : data.status === "validated"
-            ? "validated"
-            : "unknown";
+        // regra nova:
+        // - se backend já tem selfie => status face_captured
+        // - qualquer outro status => tratar como "pending_face"
+        let mappedStatus: TokenStatus;
+        if (data.status === "face_captured") {
+          mappedStatus = "face_captured";
+        } else {
+          mappedStatus = "pending_face";
+        }
 
         setTokenStatus(mappedStatus);
 
-        if (typeof data.expires_in_sec === "number") {
-          setExpiresInSec(data.expires_in_sec);
-        }
-
         if (mappedStatus === "face_captured" && data.selfie_b64) {
-          // caso a pessoa reabra o link depois
+          // já capturado anteriormente
           setSelfiePreview(data.selfie_b64);
-          setDone(true);
-        }
-
-        if (mappedStatus === "expired") {
-          setErrorMsg("Esse QR expirou. Gere outro QR no app.");
           setDone(true);
         }
       } catch (netErr) {
         console.error("Erro ao validar sessão inicial:", netErr);
-        setErrorMsg("Erro de rede. Abra o QR novamente no app.");
-        setTokenStatus("expired");
+        setErrorMsg("Erro de rede. Abra novamente o QR pelo app.");
         setDone(true);
       }
     })();
   }, []);
 
   // ==========================================================
-  // 1.1. countdown local → reduz expiresInSec 1/s
-  //      quando chega em 0 e ainda não concluiu, trava
-  // ==========================================================
-  useEffect(() => {
-    if (expiresInSec === null) return;
-    if (done) return;
-    if (
-      tokenStatus === "expired" ||
-      tokenStatus === "blocked" ||
-      tokenStatus === "validated" ||
-      tokenStatus === "face_captured"
-    ) {
-      return;
-    }
-
-    const id = setInterval(() => {
-      setExpiresInSec((prev) => {
-        if (prev === null) return prev;
-        if (prev <= 1) return 0;
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(id);
-  }, [expiresInSec, done, tokenStatus]);
-
-  // se zerou o contador e ainda tava pendente -> expira visualmente
-  useEffect(() => {
-    if (
-      expiresInSec === 0 &&
-      tokenStatus === "pending_face" &&
-      !done
-    ) {
-      setTokenStatus("expired");
-      setDone(true);
-      setErrorMsg("Esse QR expirou. Gere outro QR no app.");
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
-      }
-    }
-  }, [expiresInSec, tokenStatus, done, stream]);
-
-  // ==========================================================
-  // 2. pluga o MediaStream no <video> e tenta autoplay
+  // 2. plugar stream no <video> e tentar autoplay
   // ==========================================================
   const attachStreamToVideo = useCallback(async (media: MediaStream) => {
     const videoEl = videoRef.current;
@@ -191,7 +131,7 @@ export default function QRFacePage() {
         })
         .catch((err) => {
           console.warn("Falha ao dar play automático:", err);
-          // Safari iOS normalmente precisa interação
+          // Safari iOS pode exigir interação manual
           setCameraReady(false);
           setCameraTryingPlay(false);
           setErrorMsg(
@@ -212,7 +152,7 @@ export default function QRFacePage() {
   }, []);
 
   // ==========================================================
-  // 3. pedir acesso da câmera
+  // 3. pedir câmera
   // ==========================================================
   const requestCameraAccess = useCallback(async () => {
     if (askingPermission || capturing) return;
@@ -223,15 +163,19 @@ export default function QRFacePage() {
       return;
     }
 
-    const sessionIsClearlyInvalid =
-      tokenStatus === "expired" ||
+    // agora a gente NÃO bloqueia por 'expired', pq não existe mais expiração.
+    // mas se o backend marcou a sessão como finalizada (face_captured),
+    // ou marcada como bloqueada/validada, aí sim bloqueia.
+    const sessionIsClearlyFinished =
+      tokenStatus === "face_captured" ||
       tokenStatus === "blocked" ||
       tokenStatus === "validated" ||
-      tokenStatus === "face_captured" ||
       done;
 
-    if (sessionIsClearlyInvalid) {
-      setErrorMsg("Esse QR não está mais ativo. Gere outro QR no app.");
+    if (sessionIsClearlyFinished) {
+      setErrorMsg(
+        "Essa sessão já foi finalizada. Se precisa reenviar, gere outro QR no app."
+      );
       return;
     }
 
@@ -241,7 +185,7 @@ export default function QRFacePage() {
 
     async function getMediaFrontFirstThenFallback() {
       try {
-        // tenta frontal primeiro
+        // tenta câmera frontal primeiro
         const mediaFront = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "user" },
@@ -252,7 +196,7 @@ export default function QRFacePage() {
         });
         return mediaFront;
       } catch {
-        // fallback pra qualquer câmera
+        // fallback pra qualquer câmera disponível
       }
 
       const mediaAny = await navigator.mediaDevices.getUserMedia({
@@ -340,13 +284,16 @@ export default function QRFacePage() {
   async function handleCaptureAndSend() {
     if (done) return;
 
+    // só bloqueia se já foi finalizado ou bloqueado,
+    // mas NÃO bloqueia mais por "expired"
     if (
-      tokenStatus === "expired" ||
+      tokenStatus === "face_captured" ||
       tokenStatus === "blocked" ||
-      tokenStatus === "validated" ||
-      tokenStatus === "face_captured"
+      tokenStatus === "validated"
     ) {
-      setErrorMsg("Esse QR não está mais ativo. Gere outro no app.");
+      setErrorMsg(
+        "Essa sessão já foi finalizada. Se precisa reenviar, gere outro QR no app."
+      );
       return;
     }
 
@@ -386,7 +333,7 @@ export default function QRFacePage() {
       return;
     }
 
-    // flip horizontal tipo selfie
+    // flip horizontal tipo selfie/espelho
     ctx.save();
     ctx.scale(-1, 1);
     ctx.drawImage(videoEl, -w, 0, w, h);
@@ -419,11 +366,7 @@ export default function QRFacePage() {
       setTokenStatus("face_captured");
       setDone(true);
 
-      if (typeof data.expires_in_sec === "number") {
-        setExpiresInSec(data.expires_in_sec);
-      }
-
-      // corta câmera
+      // corta câmera por privacidade
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
       }
@@ -438,16 +381,17 @@ export default function QRFacePage() {
   // ==========================================================
   // 7. helpers de UI
   // ==========================================================
-  const sessionIsClearlyInvalid =
-    tokenStatus === "expired" ||
+  // sessão considerada "não dá mais pra capturar"
+  // (mas não existe mais o conceito de "expired")
+  const sessionIsClearlyFinished =
+    tokenStatus === "face_captured" ||
     tokenStatus === "blocked" ||
     tokenStatus === "validated" ||
-    tokenStatus === "face_captured" ||
     done;
 
   const canAskCameraNow =
     !!sessionTicket &&
-    !sessionIsClearlyInvalid &&
+    !sessionIsClearlyFinished &&
     !askingPermission &&
     !capturing;
 
@@ -507,38 +451,16 @@ export default function QRFacePage() {
     );
   }
 
-  // badge pequeno "Expira em mm:ss" no topo
-  function CountdownBadge() {
-    if (
-      expiresInSec === null ||
-      done ||
-      tokenStatus === "face_captured" ||
-      tokenStatus === "expired"
-    ) {
-      return null;
-    }
-
-    const mm = Math.floor(expiresInSec / 60);
-    const ss = expiresInSec % 60;
-    const ssPadded = ss < 10 ? `0${ss}` : String(ss);
-
-    return (
-      <div className="rounded-md border border-white/20 bg-white/5 px-2 py-1 text-[0.7rem] font-medium leading-none text-white/70">
-        Expira em {mm}:{ssPadded}
-      </div>
-    );
-  }
-
   function FaceMaskOverlay() {
     if (selfiePreview) return null;
-    if (sessionIsClearlyInvalid) return null;
+    if (sessionIsClearlyFinished) return null;
     return (
       <div
         className="pointer-events-none absolute inset-0 flex items-center justify-center"
         aria-hidden="true"
       >
         <div className="relative h-[300px] w-[220px]">
-          {/* Moldura verde com glow */}
+          {/* moldura verde com glow */}
           <div
             className="
               absolute inset-0
@@ -547,7 +469,7 @@ export default function QRFacePage() {
               shadow-[0_0_30px_rgba(38,255,89,0.55),0_0_70px_rgba(38,255,89,0.25)]
             "
           />
-          {/* vinheta escurecendo fora do rosto */}
+          {/* vinheta fora do rosto */}
           <div
             className="
               pointer-events-none absolute -inset-[100px]
@@ -566,10 +488,10 @@ export default function QRFacePage() {
   function renderCameraStatusOverlay() {
     if (selfiePreview) return null;
 
-    if (sessionIsClearlyInvalid && !selfiePreview) {
+    if (sessionIsClearlyFinished && !selfiePreview) {
       return (
         <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 px-3 text-center text-[0.75rem] leading-snug text-white/90">
-          QR inválido ou expirado. Gere outro no app.
+          Sessão finalizada. Gere um novo QR no app se precisar reenviar.
         </div>
       );
     }
@@ -642,10 +564,11 @@ export default function QRFacePage() {
       );
     }
 
-    if (sessionIsClearlyInvalid) {
+    if (sessionIsClearlyFinished) {
       return (
         <div className="px-4 text-center text-[0.8rem] leading-relaxed text-red-400">
-          Esse QR expirou ou não é mais válido. Gere um QR novo no app.
+          Essa sessão já foi finalizada. Gere um novo QR no app se quiser tentar
+          outra foto.
         </div>
       );
     }
@@ -674,7 +597,7 @@ export default function QRFacePage() {
           !cameraReady ||
           capturing ||
           !sessionTicket ||
-          sessionIsClearlyInvalid
+          sessionIsClearlyFinished
         }
         className={[
           "w-full rounded-md py-3 text-[0.9rem] font-semibold tracking-[-0.02em]",
@@ -688,34 +611,13 @@ export default function QRFacePage() {
     );
   }
 
-  function renderExpiryInfo() {
-    if (
-      expiresInSec === null ||
-      done ||
-      tokenStatus === "face_captured" ||
-      tokenStatus === "expired"
-    ) {
-      return null;
-    }
-
-    const mm = Math.floor(expiresInSec / 60);
-    const ss = expiresInSec % 60;
-    const ssPadded = ss < 10 ? `0${ss}` : String(ss);
-
-    return (
-      <div className="text-[0.7rem] leading-none text-white/50">
-        Esse passo expira em {mm}:{ssPadded}
-      </div>
-    );
-  }
-
   return (
     <main className="flex min-h-screen w-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,#1a1a1a_0%,#000000_70%)] p-6 text-white">
       <div className="flex w-full max-w-[22rem] flex-col items-center gap-6 text-center">
-        {/* Steps + timer */}
+        {/* Steps */}
         <div className="flex flex-col items-center gap-2">
           <StepIndicator />
-          <CountdownBadge />
+          {/* Countdown removido completamente */}
         </div>
 
         {/* Header */}
@@ -724,8 +626,8 @@ export default function QRFacePage() {
             Verificação facial
           </h1>
           <p className="text-[0.8rem] leading-relaxed text-white/70">
-            Centralize seu rosto dentro da moldura verde.
-            Quando estiver pronto, toque em{" "}
+            Centralize seu rosto dentro da moldura verde. Quando estiver pronto,
+            toque em{" "}
             <strong className="font-medium text-white">Capturar</strong>.
           </p>
         </header>
@@ -733,7 +635,7 @@ export default function QRFacePage() {
         {/* câmera / preview da selfie */}
         {renderCameraBlock()}
 
-        {/* canvas offscreen pra capturar frame jpeg */}
+        {/* canvas offscreen pra captura do frame jpeg */}
         <canvas ref={canvasRef} className="hidden" />
 
         {/* erros */}
@@ -746,14 +648,11 @@ export default function QRFacePage() {
         {/* botão principal */}
         {renderActionArea()}
 
-        {/* contador textual abaixo do botão */}
-        {renderExpiryInfo()}
-
         {/* rodapé explicando a captura */}
         <footer className="max-w-[240px] space-y-2 text-center text-[0.7rem] leading-relaxed text-white/40">
           <div>
-            Iluminação clara. Rosto totalmente visível.
-            Nada cobrindo olhos, boca ou testa.
+            Iluminação clara. Rosto totalmente visível. Nada cobrindo olhos,
+            boca ou testa.
           </div>
           <div className="text-[0.65rem] leading-snug text-white/30">
             A imagem é usada apenas para confirmar sua identidade e proteger
