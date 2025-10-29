@@ -938,7 +938,7 @@ function VerifyDocumentsDrawer({
                   {/* estado 1: carregando sessão QR */}
                   {qrLoading && !selfiePreview && (
                     <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[11px] font-semibold text-neutral-400 ring-1 ring-border">
-                      Gerando QR...
+                      Carregando...
                     </div>
                   )}
 
