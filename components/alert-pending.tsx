@@ -110,14 +110,16 @@ function removeBackFromLocalStorage() {
 }
 
 /* -------------------------------------------------
-   Cartão amarelo do dashboard
+   Cartão amarelo do dashboard (com bloqueio e selo)
 -------------------------------------------------- */
 export function AlertPending({
   onVerify,
   className,
+  locked = false,
 }: {
   onVerify?: () => void;
   className?: string;
+  locked?: boolean; // quando true, botão bloqueado e selo "em validação"
 }) {
   return (
     <section
@@ -127,6 +129,13 @@ export function AlertPending({
         className || ""
       )}
     >
+      {/* selo topo direito quando em validação */}
+      {locked && (
+        <div className="absolute right-4 top-3 rounded-md border border-yellow-400/40 bg-yellow-500/10 px-2 py-[3px] text-[11px] font-semibold text-yellow-400">
+          Seus documentos estão em validação
+        </div>
+      )}
+
       <div className="flex flex-col gap-4 sm:gap-1 text-left sm:pr-40">
         <div className="flex flex-col gap-1 text-left sm:pr-40">
           <div className="flex flex-wrap items-center gap-3">
@@ -154,13 +163,14 @@ export function AlertPending({
         <div className="sm:hidden">
           <button
             type="button"
-            onClick={onVerify}
+            onClick={locked ? undefined : onVerify}
+            disabled={locked}
             className={cn(
-              "w-full inline-flex cursor-pointer items-center justify-center rounded-md",
-              "bg-yellow-400 px-6 py-2 text-[13px] font-semibold text-black",
-              "hover:bg-yellow-300 active:scale-[0.99]",
-              "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0",
-              "transition-all"
+              "w-full inline-flex items-center justify-center rounded-md px-6 py-2 text-[13px] font-semibold transition-all",
+              locked
+                ? "cursor-not-allowed bg-yellow-400/40 text-black/60"
+                : "cursor-pointer bg-yellow-400 text-black hover:bg-yellow-300 active:scale-[0.99]",
+              "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0"
             )}
           >
             Verificar documentos
@@ -171,15 +181,16 @@ export function AlertPending({
       {/* Botão desktop (canto do card) */}
       <button
         type="button"
-        onClick={onVerify}
+        onClick={locked ? undefined : onVerify}
+        disabled={locked}
         className={cn(
           "hidden sm:inline-flex",
           "absolute bottom-4 right-4",
-          "cursor-pointer items-center justify-center rounded-md",
-          "bg-yellow-400 px-6 py-2 text-[13px] font-semibold text-black",
-          "hover:bg-yellow-300 active:scale-[0.99]",
-          "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0",
-          "transition-all"
+          "items-center justify-center rounded-md px-6 py-2 text-[13px] font-semibold transition-all",
+          locked
+            ? "cursor-not-allowed bg-yellow-400/40 text-black/60"
+            : "cursor-pointer bg-yellow-400 text-black hover:bg-yellow-300 active:scale-[0.99]",
+          "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0"
         )}
       >
         Verificar documentos
@@ -189,7 +200,7 @@ export function AlertPending({
 }
 
 /* -------------------------------------------------
-   Modal de upload (frente/verso)
+   Modal de upload (frente/verso) — sem mudanças de regra
 -------------------------------------------------- */
 function UploadModal({
   open,
@@ -209,11 +220,9 @@ function UploadModal({
   const [frontPreview, setFrontPreview] = React.useState<string | null>(null);
   const [backPreview, setBackPreview] = React.useState<string | null>(null);
 
-  // refs pros blob URLs
   const frontBlobRef = React.useRef<string | null>(null);
   const backBlobRef = React.useRef<string | null>(null);
 
-  // ao abrir, carrega confirmados
   React.useEffect(() => {
     if (open) {
       setFrontPreview(initialFrontB64 || null);
@@ -232,31 +241,24 @@ function UploadModal({
     }
   }, [open, initialFrontB64, initialBackB64]);
 
-  // preview frente
   React.useEffect(() => {
     if (frontFile) {
       const url = URL.createObjectURL(frontFile);
-      if (frontBlobRef.current) {
-        URL.revokeObjectURL(frontBlobRef.current);
-      }
+      if (frontBlobRef.current) URL.revokeObjectURL(frontBlobRef.current);
       frontBlobRef.current = url;
       setFrontPreview(url);
     }
   }, [frontFile]);
 
-  // preview verso
   React.useEffect(() => {
     if (backFile) {
       const url = URL.createObjectURL(backFile);
-      if (backBlobRef.current) {
-        URL.revokeObjectURL(backBlobRef.current);
-      }
+      if (backBlobRef.current) URL.revokeObjectURL(backBlobRef.current);
       backBlobRef.current = url;
       setBackPreview(url);
     }
   }, [backFile]);
 
-  // cleanup final
   React.useEffect(() => {
     return () => {
       if (frontBlobRef.current) URL.revokeObjectURL(frontBlobRef.current);
@@ -345,8 +347,6 @@ function UploadModal({
                   alt="Frente documento"
                   className="absolute inset-0 h-full w-full object-contain"
                 />
-
-                {/* X da frente */}
                 <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
                   <button
                     type="button"
@@ -406,8 +406,6 @@ function UploadModal({
                   alt="Verso documento"
                   className="absolute inset-0 h-full w-full object-contain"
                 />
-
-                {/* X do verso */}
                 <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
                   <button
                     type="button"
@@ -453,10 +451,11 @@ function UploadModal({
           <Button
             className={cn(
               "w-full cursor-pointer rounded-md bg-[#26FF59]/90 py-[1.375rem] text-[15px] font-semibold text-black hover:bg-[#26FF59]",
-              !canConfirm && "pointer-events-none cursor-not-allowed opacity-30"
+              !(frontPreview || backPreview) &&
+                "pointer-events-none cursor-not-allowed opacity-30"
             )}
             onClick={handleConfirmClick}
-            disabled={!canConfirm}
+            disabled={!(frontPreview || backPreview)}
           >
             Confirmar envio
           </Button>
@@ -475,12 +474,71 @@ function UploadModal({
 }
 
 /* -------------------------------------------------
-   Drawer principal (documento + selfie/QR)
+   Overlay de sucesso (central) pós envio
+-------------------------------------------------- */
+function SuccessOverlay({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/70 p-4"
+      onMouseDown={onClose}
+    >
+      <div
+        className="relative w-full max-w-[420px] rounded-xl border border-neutral-800 bg-[#0b0b0b] p-6 text-center shadow-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {/* “Imagem”/ícone */}
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#26FF59]/20">
+          <svg
+            viewBox="0 0 24 24"
+            className="h-9 w-9"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.2}
+          >
+            <path
+              d="M20 6L9 17l-5-5"
+              className="text-[#26FF59]"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+
+        <h3 className="text-lg font-semibold text-white">
+          Documentos Enviados
+        </h3>
+        <p className="mt-2 text-sm leading-relaxed text-white/70">
+          Seus documentos foram enviados com sucesso e estão em análise. O
+          processo pode levar de <strong>3 a 5 dias úteis</strong> para serem
+          validados ou recusados.
+        </p>
+
+        <Button
+          onClick={onClose}
+          className="mt-5 w-full bg-[#26FF59] text-black hover:bg-[#26FF59]/90"
+        >
+          Ok, entendi
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------
+   Drawer principal (documento + selfie/QR) — agora envia ao backend
 -------------------------------------------------- */
 function VerifyDocumentsDrawer({
   open,
   onOpenChange,
   user,
+  onSubmitted, // avisa o pai para travar o alerta
 }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
@@ -491,6 +549,7 @@ function VerifyDocumentsDrawer({
     cpfOrCnpj: string;
     phone: string;
   };
+  onSubmitted?: () => void;
 }) {
   const isMobile = useIsMobile();
 
@@ -511,6 +570,12 @@ function VerifyDocumentsDrawer({
   // selfie recebida via celular
   const [selfiePreview, setSelfiePreview] = React.useState<string | null>(null);
 
+  // Envio final
+  const [submitting, setSubmitting] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [submitted, setSubmitted] = React.useState(false);
+  const [showSuccess, setShowSuccess] = React.useState(false);
+
   // evita bootstrap duplicado (StrictMode, re-render, etc.)
   const bootstrappedRef = React.useRef(false);
 
@@ -524,7 +589,6 @@ function VerifyDocumentsDrawer({
 
   // cria/renova sessão facial e QR
   const bootstrapQRSession = React.useCallback(async () => {
-    // se já tem selfie salva, não faz sentido gerar novo QR aqui
     if (selfiePreview) return;
 
     try {
@@ -540,13 +604,11 @@ function VerifyDocumentsDrawer({
       const data = await resp.json();
 
       if (!resp.ok) {
-        console.error("Erro bootstrapQRSession:", data);
         setQrError(data.error || "Erro ao gerar QR Code.");
         setQrLoading(false);
         return;
       }
 
-      // se backend já tinha selfie
       if (data.status === "face_captured" && data.selfie_b64) {
         setSelfiePreview((prev) => prev || data.selfie_b64);
         setQrLoading(false);
@@ -555,10 +617,8 @@ function VerifyDocumentsDrawer({
 
       setSessionTicket(data.session || null);
       setQrUrl(data.url || null);
-
       setQrLoading(false);
     } catch (err: any) {
-      console.error("Falha de rede ao gerar QR:", err);
       setQrError("Falha de rede ao gerar QR Code.");
       setQrLoading(false);
     }
@@ -576,7 +636,7 @@ function VerifyDocumentsDrawer({
     bootstrapQRSession();
   }, [open, bootstrapQRSession]);
 
-  // polling da selfie (fica checando se já chegou selfie_captured)
+  // polling da selfie
   React.useEffect(() => {
     if (!open) return;
     if (!sessionTicket) return;
@@ -593,32 +653,22 @@ function VerifyDocumentsDrawer({
         );
         const data = await res.json();
 
-        if (!res.ok) {
-          console.warn("Polling erro:", data.error);
-          return;
-        }
+        if (!res.ok) return;
 
-        // chegou selfie -> fixa e para polling
         if (data.status === "face_captured" && data.selfie_b64) {
           setSelfiePreview((prev) => prev || data.selfie_b64);
           return;
         }
-      } catch (err) {
-        console.warn("Polling falhou:", err);
-      }
+      } catch {}
     }
 
     poll();
     intervalId = setInterval(poll, 2500);
 
-    return () => {
-      clearInterval(intervalId);
-    };
+    return () => clearInterval(intervalId);
   }, [open, sessionTicket, selfiePreview]);
 
-  // remover selfie:
-  // - chama DELETE /api/qrface pra resetar no backend
-  // - backend devolve nova sessão + novo QR
+  // remover selfie -> reiniciar sessão
   async function handleRemoveSelfie(
     e: React.MouseEvent<HTMLButtonElement, MouseEvent>
   ) {
@@ -636,23 +686,16 @@ function VerifyDocumentsDrawer({
       const data = await resp.json();
 
       if (!resp.ok) {
-        console.error("Falha ao remover selfie:", data);
         setQrError(data.error || "Erro ao reiniciar verificação facial.");
         setQrLoading(false);
         return;
       }
 
-      // limpamos selfie local
       setSelfiePreview(null);
-
-      // backend já resetou status da mesma sessão facial,
-      // devolveu session/url novas:
       setSessionTicket(data.session || null);
       setQrUrl(data.url || null);
-
       setQrLoading(false);
-    } catch (err) {
-      console.error("Erro de rede ao remover selfie:", err);
+    } catch {
       setQrError("Falha de rede ao reiniciar verificação facial.");
       setQrLoading(false);
     }
@@ -685,14 +728,53 @@ function VerifyDocumentsDrawer({
     removeBackFromLocalStorage();
   }
 
-  // envio final (placeholder)
-  function handleSubmitDocument() {
-    console.log("Enviar para KYC:", {
-      frente: frontConfirmed,
-      verso: backConfirmed,
-      selfiePreview,
-      sessionTicket,
-    });
+  // envio final — valida, envia pro backend, mostra sucesso, trava alerta
+  async function handleSubmitDocument() {
+    setSubmitError(null);
+
+    // validação exigida: frente, verso, selfie (nada de QR)
+    if (!frontConfirmed || !backConfirmed || !selfiePreview) {
+      setSubmitError(
+        "É necessário enviar a frente e o verso do documento e capturar a selfie."
+      );
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/envite-docs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          front_b64: frontConfirmed,
+          back_b64: backConfirmed,
+          selfie_b64: selfiePreview,
+          user: {
+            name: user?.name,
+            email: user?.email,
+            cpfOrCnpj: user?.cpfOrCnpj,
+            phone: user?.phone,
+            id: user?.id,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Falha ao enviar os documentos.");
+      }
+
+      setSubmitted(true);
+      setShowSuccess(true);
+      onSubmitted?.(); // avisa o pai para travar o alerta
+
+      // opcional: manter as imagens para visualização; não limpar localStorage
+    } catch (err: any) {
+      setSubmitError(err?.message || "Erro ao enviar os documentos.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function handleDrawerOpenChange(next: boolean) {
@@ -705,6 +787,8 @@ function VerifyDocumentsDrawer({
   const email = user?.email || "indisponível@wyzebank.com";
   const phone = user?.phone || "—";
 
+  const canSend = !!frontConfirmed && !!backConfirmed && !!selfiePreview;
+
   return (
     <>
       <UploadModal
@@ -714,6 +798,8 @@ function VerifyDocumentsDrawer({
         initialFrontB64={frontConfirmed}
         initialBackB64={backConfirmed}
       />
+
+      <SuccessOverlay open={showSuccess} onClose={() => setShowSuccess(false)} />
 
       <Drawer
         open={open}
@@ -811,15 +897,19 @@ function VerifyDocumentsDrawer({
               <div
                 role="button"
                 tabIndex={0}
-                onClick={handleOpenUploadModal}
+                onClick={submitted ? undefined : handleOpenUploadModal}
                 onKeyDown={(e) => {
+                  if (submitted) return;
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     handleOpenUploadModal();
                   }
                 }}
                 className={cn(
-                  "group relative w-full cursor-pointer rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-4 text-left outline-none transition-colors hover:border-neutral-500/80 hover:bg-neutral-900/40 focus:ring-2 focus:ring-neutral-600/50"
+                  "group relative w-full rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-4 text-left outline-none transition-colors",
+                  submitted
+                    ? "cursor-not-allowed opacity-60"
+                    : "cursor-pointer hover:border-neutral-500/80 hover:bg-neutral-900/40 focus:ring-2 focus:ring-neutral-600/50"
                 )}
               >
                 {frontConfirmed || backConfirmed ? (
@@ -833,19 +923,22 @@ function VerifyDocumentsDrawer({
                             alt="Frente confirmada"
                             className="absolute inset-0 h-full w-full object-contain"
                           />
-
-                          {/* X da frente confirmada */}
                           <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
                             <button
                               type="button"
-                              onClick={handleRemoveFront}
-                              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
+                              onClick={submitted ? undefined : handleRemoveFront}
+                              disabled={submitted}
+                              className={cn(
+                                "inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold text-white",
+                                submitted
+                                  ? "cursor-not-allowed bg-black/40"
+                                  : "bg-black/70 hover:bg-black/90"
+                              )}
                               title="Remover frente"
                             >
                               ✕
                             </button>
                           </div>
-
                           <div className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-[10px] font-medium text-white ring-1 ring-white/20">
                             Frente
                           </div>
@@ -866,19 +959,22 @@ function VerifyDocumentsDrawer({
                             alt="Verso confirmada"
                             className="absolute inset-0 h-full w-full object-contain"
                           />
-
-                          {/* X do verso confirmado */}
                           <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
                             <button
                               type="button"
-                              onClick={handleRemoveBack}
-                              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
+                              onClick={submitted ? undefined : handleRemoveBack}
+                              disabled={submitted}
+                              className={cn(
+                                "inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold text-white",
+                                submitted
+                                  ? "cursor-not-allowed bg-black/40"
+                                  : "bg-black/70 hover:bg-black/90"
+                              )}
                               title="Remover verso"
                             >
                               ✕
                             </button>
                           </div>
-
                           <div className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-[10px] font-medium text-white ring-1 ring-white/20">
                             Verso
                           </div>
@@ -907,6 +1003,10 @@ function VerifyDocumentsDrawer({
                 )}
               </div>
 
+              {submitError && (
+                <div className="text-[12px] text-red-400">{submitError}</div>
+              )}
+
               <div className="text-[14px] leading-relaxed text-muted-foreground">
                 • Documento precisa estar legível (sem blur / sem corte).
                 <br />
@@ -916,16 +1016,14 @@ function VerifyDocumentsDrawer({
 
             <Separator />
 
-            {/* SELFIE / PROVA DE VIDA VIA QRCODE */}
+            {/* SELFIE */}
             <div className="grid gap-2 pt-2">
               <div className="text-[16px] font-medium text-foreground">
                 Selfie de verificação
               </div>
 
               <div className="text-[14px] leading-snug text-muted-foreground">
-                Agora precisamos confirmar que você é realmente você. Aponte a
-                câmera do seu celular para o QR abaixo e siga as instruções para
-                validar seu rosto em tempo real.
+                Aponte a câmera do seu celular para o QR e siga as instruções.
               </div>
 
               <div
@@ -937,8 +1035,8 @@ function VerifyDocumentsDrawer({
                 <div className="relative flex h-[200px] w-[200px] items-center justify-center overflow-hidden rounded-md bg-white">
                   {/* estado 1: carregando sessão QR */}
                   {qrLoading && !selfiePreview && (
-                    <div className="flex h-[200px] w-[200px] items-center justify-center bg-neutral-800 text-[11px] font-semibold text-neutral-400 ring-1 ring-border">
-                      Carregando...
+                    <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[11px] font-semibold text-neutral-400 ring-1 ring-border">
+                      Gerando QR...
                     </div>
                   )}
 
@@ -958,16 +1056,25 @@ function VerifyDocumentsDrawer({
                         className="absolute inset-0 h-full w-full object-cover"
                       />
 
-                      {/* barra top com X */}
-                      <div className="absolute inset-x-0 top-0 z-10 flex justify-end px-2 py-2">
+                      <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
                         <button
                           type="button"
-                          onClick={handleRemoveSelfie}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-full   text-[11px] font-semibold text-white hover:bg-black/90"
+                          onClick={submitted ? undefined : handleRemoveSelfie}
+                          disabled={submitted}
+                          className={cn(
+                            "inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold text-white",
+                            submitted
+                              ? "cursor-not-allowed bg-black/40"
+                              : "bg-black/70 hover:bg-black/90"
+                          )}
                           title="Remover selfie e gerar novo QR"
                         >
                           ✕
                         </button>
+                      </div>
+
+                      <div className="absolute inset-x-0 bottom-0 z-10 bg-black/70 py-2 text-center text-[0.7rem] font-medium text-white">
+                        Selfie enviada com sucesso
                       </div>
                     </div>
                   )}
@@ -983,7 +1090,6 @@ function VerifyDocumentsDrawer({
                     />
                   )}
 
-                  {/* fallback final se nada carregou */}
                   {!qrLoading && !qrError && !selfiePreview && !qrUrl && (
                     <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[10px] font-semibold text-neutral-400 ring-1 ring-border">
                       QR CODE
@@ -1004,14 +1110,14 @@ function VerifyDocumentsDrawer({
             <Button
               size="sm"
               className={cn(
-                "w-full cursor-pointer rounded-md bg-[#26FF59]/90 py-5 text-[14px] font-semibold text-black hover:bg-[#26FF59]",
-                !(frontConfirmed && backConfirmed && selfiePreview) &&
-                  "pointer-events-none cursor-not-allowed opacity-30"
+                "w-full rounded-md bg-[#26FF59]/90 py-5 text-[14px] font-semibold text-black hover:bg-[#26FF59]",
+                !canSend && "pointer-events-none cursor-not-allowed opacity-30",
+                submitted && "pointer-events-none cursor-not-allowed opacity-60"
               )}
               onClick={handleSubmitDocument}
-              disabled={!(frontConfirmed && backConfirmed && selfiePreview)}
+              disabled={!canSend || submitted || submitting}
             >
-              Enviar documento
+              {submitting ? "Enviando..." : "Enviar documento"}
             </Button>
 
             <DrawerClose asChild>
@@ -1031,7 +1137,7 @@ function VerifyDocumentsDrawer({
 }
 
 /* -------------------------------------------------
-   Wrapper section (alerta + drawer)
+   Wrapper section (alerta + drawer) — controla bloqueio do alerta
 -------------------------------------------------- */
 export function VerifyDocumentsSection({
   user,
@@ -1045,18 +1151,23 @@ export function VerifyDocumentsSection({
   };
 }) {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [inReview, setInReview] = React.useState(false); // trava alerta e mostra selo
 
   return (
     <>
       <AlertPending
         onVerify={() => setDrawerOpen(true)}
         className="border-yellow-400/30 bg-[#050505]"
+        locked={inReview}
       />
 
       <VerifyDocumentsDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         user={user}
+        onSubmitted={() => {
+          setInReview(true); // após enviar, bloqueia o alerta
+        }}
       />
     </>
   );
