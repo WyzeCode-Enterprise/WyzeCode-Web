@@ -15,22 +15,17 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
 /* -------------------------------------------------
-   Hook simples pra detectar viewport "mobile"
+   Hook viewport
 -------------------------------------------------- */
 function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState(false);
-
   React.useEffect(() => {
     const mq = window.matchMedia("(max-width: 640px)");
-
     const handler = (e: MediaQueryListEvent | MediaQueryList) => {
-      const matches =
-        (e as MediaQueryList).matches ?? (e as any).matches ?? false;
+      const matches = (e as MediaQueryList).matches ?? (e as any).matches ?? false;
       setIsMobile(!!matches);
     };
-
     handler(mq);
-
     if (typeof mq.addEventListener === "function") {
       mq.addEventListener("change", handler);
       return () => mq.removeEventListener("change", handler);
@@ -39,12 +34,11 @@ function useIsMobile() {
       return () => mq.removeListener(handler as any);
     }
   }, []);
-
   return isMobile;
 }
 
 /* -------------------------------------------------
-   LocalStorage helpers pra frente/verso documento
+   LocalStorage helpers
 -------------------------------------------------- */
 const FRONT_KEY = "wzb_dcmp_mf";
 const BACK_KEY = "wzb_dcmp_mb";
@@ -60,57 +54,40 @@ async function fileToBase64(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
-
-function saveImagesToLocalStorage(
-  frontB64: string | null,
-  backB64: string | null
-) {
+function saveImagesToLocalStorage(frontB64: string | null, backB64: string | null) {
   if (typeof window === "undefined") return;
   try {
     if (frontB64) localStorage.setItem(FRONT_KEY, frontB64);
     else localStorage.removeItem(FRONT_KEY);
-
     if (backB64) localStorage.setItem(BACK_KEY, backB64);
     else localStorage.removeItem(BACK_KEY);
-  } catch (err) {
-    console.warn("Erro salvando no localStorage", err);
-  }
+  } catch {}
 }
-
 function loadImagesFromLocalStorage() {
-  if (typeof window === "undefined") {
-    return { front: null, back: null };
-  }
+  if (typeof window === "undefined") return { front: null, back: null };
   try {
     const front = localStorage.getItem(FRONT_KEY);
     const back = localStorage.getItem(BACK_KEY);
     return { front: front || null, back: back || null };
-  } catch (err) {
-    console.warn("Erro lendo localStorage", err);
+  } catch {
     return { front: null, back: null };
   }
 }
-
 function removeFrontFromLocalStorage() {
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(FRONT_KEY);
-  } catch (err) {
-    console.warn("Erro removendo frente", err);
-  }
+  } catch {}
 }
-
 function removeBackFromLocalStorage() {
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(BACK_KEY);
-  } catch (err) {
-    console.warn("Erro removendo verso", err);
-  }
+  } catch {}
 }
 
 /* -------------------------------------------------
-   Cartão amarelo do dashboard (com bloqueio e selo)
+   Alerta amarelo (com selo/lock)
 -------------------------------------------------- */
 export function AlertPending({
   onVerify,
@@ -119,7 +96,7 @@ export function AlertPending({
 }: {
   onVerify?: () => void;
   className?: string;
-  locked?: boolean; // quando true, botão bloqueado e selo "em validação"
+  locked?: boolean;
 }) {
   return (
     <section
@@ -129,7 +106,6 @@ export function AlertPending({
         className || ""
       )}
     >
-      {/* selo topo direito quando em validação */}
       {locked && (
         <div className="absolute right-4 top-3 rounded-md border border-yellow-400/40 bg-yellow-500/10 px-2 py-[3px] text-[11px] font-semibold text-yellow-400">
           Seus documentos estão em validação
@@ -142,7 +118,6 @@ export function AlertPending({
             <span className="inline-flex items-center rounded-full border border-yellow-400/40 bg-yellow-500/10 px-2 py-[3px] text-[11px] font-medium leading-none text-yellow-400">
               1° Etapa pendente
             </span>
-
             <span className="text-[11px] leading-none font-semibold text-yellow-400">
               Verificação pendente
             </span>
@@ -159,7 +134,7 @@ export function AlertPending({
           </p>
         </div>
 
-        {/* Botão mobile (dentro do card) */}
+        {/* mobile */}
         <div className="sm:hidden">
           <button
             type="button"
@@ -178,7 +153,7 @@ export function AlertPending({
         </div>
       </div>
 
-      {/* Botão desktop (canto do card) */}
+      {/* desktop */}
       <button
         type="button"
         onClick={locked ? undefined : onVerify}
@@ -200,7 +175,7 @@ export function AlertPending({
 }
 
 /* -------------------------------------------------
-   Modal de upload (frente/verso) — sem mudanças de regra
+   Modal de upload frente/verso
 -------------------------------------------------- */
 function UploadModal({
   open,
@@ -282,9 +257,7 @@ function UploadModal({
     onConfirm(finalFrontB64 || null, finalBackB64 || null);
   }
 
-  function handleRemoveFrontClick(
-    e: React.MouseEvent<HTMLButtonElement, MouseEvent>
-  ) {
+  function handleRemoveFrontClick(e: React.MouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
     setFrontFile(null);
     setFrontPreview(null);
@@ -294,9 +267,7 @@ function UploadModal({
     }
   }
 
-  function handleRemoveBackClick(
-    e: React.MouseEvent<HTMLButtonElement, MouseEvent>
-  ) {
+  function handleRemoveBackClick(e: React.MouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
     setBackFile(null);
     setBackPreview(null);
@@ -308,45 +279,28 @@ function UploadModal({
 
   return (
     <div
-      className={cn(
-        "fixed inset-0 z-[9999999] flex items-center justify-center bg-black/70 p-5"
-      )}
+      className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/70 p-5"
       onMouseDown={onClose}
     >
       <div
-        className={cn(
-          "flex w-full max-w-[800px] flex-col gap-4 rounded-md border border-neutral-800 bg-[#0a0a0a] p-5 shadow-xl"
-        )}
+        className="flex w-full max-w-[800px] flex-col gap-4 rounded-md border border-neutral-800 bg-[#0a0a0a] p-5 shadow-xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex flex-col gap-1">
-          <div className="text-[20px] font-semibold text-foreground">
-            Enviar documento
-          </div>
+          <div className="text-[20px] font-semibold text-foreground">Enviar documento</div>
           <div className="text-[14px] leading-relaxed text-muted-foreground">
-            Envie frente e verso do seu documento oficial com foto. Precisa
-            estar nítido, sem corte e sem dedo cobrindo dado.
+            Envie frente e verso do seu documento oficial com foto.
           </div>
         </div>
 
         {/* Frente */}
         <div className="flex flex-col gap-2">
-          <div className="text-[16px] font-medium text-foreground">
-            Frente do documento
-          </div>
+          <div className="text-[16px] font-medium text-foreground">Frente do documento</div>
 
-          <label
-            className={cn(
-              "group relative flex w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-8 text-center transition-colors hover:border-neutral-500/80 hover:bg-neutral-900/40"
-            )}
-          >
+          <label className="group relative flex w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-8 text-center transition-colors hover:border-neutral-500/80 hover:bg-neutral-900/40">
             {frontPreview ? (
               <div className="relative h-[200px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
-                <img
-                  src={frontPreview}
-                  alt="Frente documento"
-                  className="absolute inset-0 h-full w-full object-contain"
-                />
+                <img src={frontPreview} alt="Frente documento" className="absolute inset-0 h-full w-full object-contain" />
                 <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
                   <button
                     type="button"
@@ -364,25 +318,18 @@ function UploadModal({
                   FRENTE
                 </div>
                 <div className="flex flex-col gap-1 text-center text-[12px] leading-tight">
-                  <span className="font-medium text-foreground">
-                    Clique para enviar
-                  </span>
-                  <span className="text-muted-foreground">
-                    PNG, JPG, PDF — máx 10MB
-                  </span>
+                  <span className="font-medium text-foreground">Clique para enviar</span>
+                  <span className="text-muted-foreground">PNG, JPG, PDF — máx 10MB</span>
                 </div>
               </div>
             )}
-
             <input
               type="file"
               accept="image/*,.pdf"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) {
-                  setFrontFile(f);
-                }
+                if (f) setFrontFile(f);
               }}
             />
           </label>
@@ -390,22 +337,12 @@ function UploadModal({
 
         {/* Verso */}
         <div className="flex flex-col gap-2">
-          <div className="text-[16px] font-medium text-foreground">
-            Verso do documento
-          </div>
+          <div className="text-[16px] font-medium text-foreground">Verso do documento</div>
 
-          <label
-            className={cn(
-              "group relative flex w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-8 text-center transition-colors hover:border-neutral-500/80 hover:bg-neutral-900/40"
-            )}
-          >
+          <label className="group relative flex w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-8 text-center transition-colors hover:border-neutral-500/80 hover:bg-neutral-900/40">
             {backPreview ? (
               <div className="relative h-[200px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
-                <img
-                  src={backPreview}
-                  alt="Verso documento"
-                  className="absolute inset-0 h-full w-full object-contain"
-                />
+                <img src={backPreview} alt="Verso documento" className="absolute inset-0 h-full w-full object-contain" />
                 <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
                   <button
                     type="button"
@@ -423,25 +360,18 @@ function UploadModal({
                   VERSO
                 </div>
                 <div className="flex flex-col gap-1 text-center text-[12px] leading-tight">
-                  <span className="font-medium text-foreground">
-                    Clique para enviar
-                  </span>
-                  <span className="text-muted-foreground">
-                    PNG, JPG, PDF — máx 10MB
-                  </span>
+                  <span className="font-medium text-foreground">Clique para enviar</span>
+                  <span className="text-muted-foreground">PNG, JPG, PDF — máx 10MB</span>
                 </div>
               </div>
             )}
-
             <input
               type="file"
               accept="image/*,.pdf"
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) {
-                  setBackFile(f);
-                }
+                if (f) setBackFile(f);
               }}
             />
           </label>
@@ -451,10 +381,12 @@ function UploadModal({
           <Button
             className={cn(
               "w-full cursor-pointer rounded-md bg-[#26FF59]/90 py-[1.375rem] text-[15px] font-semibold text-black hover:bg-[#26FF59]",
-              !(frontPreview || backPreview) &&
-                "pointer-events-none cursor-not-allowed opacity-30"
+              !(frontPreview || backPreview) && "pointer-events-none cursor-not-allowed opacity-30"
             )}
-            onClick={handleConfirmClick}
+            onClick={async () => {
+              let f = frontPreview, b = backPreview;
+              onConfirm(f || null, b || null);
+            }}
             disabled={!(frontPreview || backPreview)}
           >
             Confirmar envio
@@ -474,112 +406,67 @@ function UploadModal({
 }
 
 /* -------------------------------------------------
-   Overlay de sucesso (central) pós envio
+   Bloco de confirmação inline (substitui os quadros)
 -------------------------------------------------- */
-function SuccessOverlay({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
-  if (!open) return null;
+function InlineConfirmation() {
   return (
-    <div
-      className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/70 p-4"
-      onMouseDown={onClose}
-    >
-      <div
-        className="relative w-full max-w-[420px] rounded-xl border border-neutral-800 bg-[#0b0b0b] p-6 text-center shadow-2xl"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        {/* “Imagem”/ícone */}
+    <div className="flex items-center justify-center">
+      <div className="w-full max-w-[520px] rounded-xl border border-neutral-800 bg-[#0b0b0b] p-6 text-center shadow-2xl">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#26FF59]/20">
-          <svg
-            viewBox="0 0 24 24"
-            className="h-9 w-9"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2.2}
-          >
-            <path
-              d="M20 6L9 17l-5-5"
-              className="text-[#26FF59]"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+          <svg viewBox="0 0 24 24" className="h-9 w-9" fill="none" stroke="currentColor" strokeWidth={2.2}>
+            <path d="M20 6L9 17l-5-5" className="text-[#26FF59]" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
 
-        <h3 className="text-lg font-semibold text-white">
-          Documentos Enviados
-        </h3>
+        <h3 className="text-lg font-semibold text-white">Documentos Enviados</h3>
         <p className="mt-2 text-sm leading-relaxed text-white/70">
-          Seus documentos foram enviados com sucesso e estão em análise. O
-          processo pode levar de <strong>3 a 5 dias úteis</strong> para serem
-          validados ou recusados.
+          Seus documentos foram enviados com sucesso e estão em análise. O processo pode levar de{" "}
+          <strong>3 a 5 dias úteis</strong> para serem validados ou recusados.
         </p>
-
-        <Button
-          onClick={onClose}
-          className="mt-5 w-full bg-[#26FF59] text-black hover:bg-[#26FF59]/90"
-        >
-          Ok, entendi
-        </Button>
       </div>
     </div>
   );
 }
 
 /* -------------------------------------------------
-   Drawer principal (documento + selfie/QR) — agora envia ao backend
+   Drawer principal
 -------------------------------------------------- */
 function VerifyDocumentsDrawer({
   open,
   onOpenChange,
   user,
-  onSubmitted, // avisa o pai para travar o alerta
+  lockedFromServer = false,  // se veio travado do GET
+  onSubmitted,
 }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
-  user?: {
-    id: number;
-    name: string;
-    email: string;
-    cpfOrCnpj: string;
-    phone: string;
-  };
+  user?: { id: number; name: string; email: string; cpfOrCnpj: string; phone: string };
+  lockedFromServer?: boolean;
   onSubmitted?: () => void;
 }) {
   const isMobile = useIsMobile();
 
-  // previews do doc
-  const [frontConfirmed, setFrontConfirmed] = React.useState<string | null>(
-    null
-  );
+  // documentos
+  const [frontConfirmed, setFrontConfirmed] = React.useState<string | null>(null);
   const [backConfirmed, setBackConfirmed] = React.useState<string | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = React.useState(false);
 
-  // ====== SELFIE / QR ======
+  // selfie / qr
   const [qrUrl, setQrUrl] = React.useState<string | null>(null);
   const [sessionTicket, setSessionTicket] = React.useState<string | null>(null);
-
   const [qrLoading, setQrLoading] = React.useState(false);
   const [qrError, setQrError] = React.useState<string | null>(null);
-
-  // selfie recebida via celular
   const [selfiePreview, setSelfiePreview] = React.useState<string | null>(null);
 
-  // Envio final
+  // envio
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
   const [submitted, setSubmitted] = React.useState(false);
-  const [showSuccess, setShowSuccess] = React.useState(false);
 
-  // evita bootstrap duplicado (StrictMode, re-render, etc.)
+  // evita bootstrap duplo
   const bootstrappedRef = React.useRef(false);
 
-  // carrega frente/verso salvos localmente ao abrir
+  // Carrega frente/verso locais
   React.useEffect(() => {
     if (!open) return;
     const { front, back } = loadImagesFromLocalStorage();
@@ -587,110 +474,77 @@ function VerifyDocumentsDrawer({
     if (back) setBackConfirmed(back);
   }, [open]);
 
-  // cria/renova sessão facial e QR
+  // Cria/renova sessão QR (apenas se não houver selfie ainda e não estiver travado)
   const bootstrapQRSession = React.useCallback(async () => {
     if (selfiePreview) return;
+    if (lockedFromServer || submitted) return; // já não precisa
 
     try {
       setQrLoading(true);
       setQrError(null);
-
-      const resp = await fetch("/api/qrface", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-      });
-
+      const resp = await fetch("/api/qrface", { method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store" });
       const data = await resp.json();
-
       if (!resp.ok) {
         setQrError(data.error || "Erro ao gerar QR Code.");
         setQrLoading(false);
         return;
       }
-
       if (data.status === "face_captured" && data.selfie_b64) {
-        setSelfiePreview((prev) => prev || data.selfie_b64);
+        setSelfiePreview((p) => p || data.selfie_b64);
         setQrLoading(false);
         return;
       }
-
       setSessionTicket(data.session || null);
       setQrUrl(data.url || null);
       setQrLoading(false);
-    } catch (err: any) {
+    } catch {
       setQrError("Falha de rede ao gerar QR Code.");
       setQrLoading(false);
     }
-  }, [selfiePreview]);
+  }, [selfiePreview, lockedFromServer, submitted]);
 
-  // só roda bootstrap 1x POR ABERTURA do drawer
   React.useEffect(() => {
     if (!open) {
       bootstrappedRef.current = false;
       return;
     }
     if (bootstrappedRef.current) return;
-
     bootstrappedRef.current = true;
     bootstrapQRSession();
   }, [open, bootstrapQRSession]);
 
-  // polling da selfie
+  // polling selfie
   React.useEffect(() => {
-    if (!open) return;
-    if (!sessionTicket) return;
-    if (selfiePreview) return;
-
+    if (!open || !sessionTicket || selfiePreview || lockedFromServer || submitted) return;
     const myTicket = sessionTicket;
-    let intervalId: any;
-
-    async function poll() {
+    const id = setInterval(async () => {
       try {
-        const res = await fetch(
-          `/api/qrface?session=${encodeURIComponent(myTicket)}`,
-          { method: "GET", cache: "no-store" }
-        );
+        const res = await fetch(`/api/qrface?session=${encodeURIComponent(myTicket)}`, { method: "GET", cache: "no-store" });
         const data = await res.json();
-
         if (!res.ok) return;
-
         if (data.status === "face_captured" && data.selfie_b64) {
-          setSelfiePreview((prev) => prev || data.selfie_b64);
-          return;
+          setSelfiePreview((p) => p || data.selfie_b64);
         }
       } catch {}
-    }
+    }, 2500);
+    return () => clearInterval(id);
+  }, [open, sessionTicket, selfiePreview, lockedFromServer, submitted]);
 
-    poll();
-    intervalId = setInterval(poll, 2500);
-
-    return () => clearInterval(intervalId);
-  }, [open, sessionTicket, selfiePreview]);
-
-  // remover selfie -> reiniciar sessão
-  async function handleRemoveSelfie(
-    e: React.MouseEvent<HTMLButtonElement, MouseEvent>
-  ) {
+  // remover selfie
+  async function handleRemoveSelfie(e: React.MouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
+    if (lockedFromServer || submitted) return;
 
     try {
       setQrLoading(true);
       setQrError(null);
-
-      const resp = await fetch("/api/qrface", {
-        method: "DELETE",
-        cache: "no-store",
-      });
-
+      const resp = await fetch("/api/qrface", { method: "DELETE", cache: "no-store" });
       const data = await resp.json();
-
       if (!resp.ok) {
         setQrError(data.error || "Erro ao reiniciar verificação facial.");
         setQrLoading(false);
         return;
       }
-
       setSelfiePreview(null);
       setSessionTicket(data.session || null);
       setQrUrl(data.url || null);
@@ -701,17 +555,15 @@ function VerifyDocumentsDrawer({
     }
   }
 
-  // helpers do modal documento
-  function handleConfirmUpload(
-    finalFrontB64: string | null,
-    finalBackB64: string | null
-  ) {
+  // modal documento
+  function handleConfirmUpload(finalFrontB64: string | null, finalBackB64: string | null) {
     setFrontConfirmed(finalFrontB64);
     setBackConfirmed(finalBackB64);
     saveImagesToLocalStorage(finalFrontB64, finalBackB64);
     setUploadModalOpen(false);
   }
   function handleOpenUploadModal() {
+    if (lockedFromServer || submitted) return;
     setUploadModalOpen(true);
   }
   function handleCloseUploadModal() {
@@ -719,24 +571,24 @@ function VerifyDocumentsDrawer({
   }
   function handleRemoveFront(e: React.MouseEvent) {
     e.stopPropagation();
+    if (lockedFromServer || submitted) return;
     setFrontConfirmed(null);
     removeFrontFromLocalStorage();
   }
   function handleRemoveBack(e: React.MouseEvent) {
     e.stopPropagation();
+    if (lockedFromServer || submitted) return;
     setBackConfirmed(null);
     removeBackFromLocalStorage();
   }
 
-  // envio final — valida, envia pro backend, mostra sucesso, trava alerta
+  // envio final
   async function handleSubmitDocument() {
+    if (lockedFromServer || submitted) return;
     setSubmitError(null);
 
-    // validação exigida: frente, verso, selfie (nada de QR)
     if (!frontConfirmed || !backConfirmed || !selfiePreview) {
-      setSubmitError(
-        "É necessário enviar a frente e o verso do documento e capturar a selfie."
-      );
+      setSubmitError("É necessário enviar a frente e o verso do documento e capturar a selfie.");
       return;
     }
 
@@ -761,15 +613,20 @@ function VerifyDocumentsDrawer({
       });
 
       const data = await res.json();
+
+      // Se já tinha em análise, consideramos "ok" e travamos a UI do mesmo jeito
+      if (res.status === 409 && (data?.code === "ALREADY_IN_REVIEW" || data?.locked)) {
+        setSubmitted(true);
+        onSubmitted?.();
+        return;
+      }
+
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Falha ao enviar os documentos.");
       }
 
       setSubmitted(true);
-      setShowSuccess(true);
-      onSubmitted?.(); // avisa o pai para travar o alerta
-
-      // opcional: manter as imagens para visualização; não limpar localStorage
+      onSubmitted?.(); // trava alerta
     } catch (err: any) {
       setSubmitError(err?.message || "Erro ao enviar os documentos.");
     } finally {
@@ -778,7 +635,7 @@ function VerifyDocumentsDrawer({
   }
 
   function handleDrawerOpenChange(next: boolean) {
-    if (!next && uploadModalOpen) return;
+    if (!next && uploadModalOpen) return; // evita fechar com modal aberto
     onOpenChange(next);
   }
 
@@ -788,6 +645,7 @@ function VerifyDocumentsDrawer({
   const phone = user?.phone || "—";
 
   const canSend = !!frontConfirmed && !!backConfirmed && !!selfiePreview;
+  const inlineSuccess = lockedFromServer || submitted;
 
   return (
     <>
@@ -799,13 +657,7 @@ function VerifyDocumentsDrawer({
         initialBackB64={backConfirmed}
       />
 
-      <SuccessOverlay open={showSuccess} onClose={() => setShowSuccess(false)} />
-
-      <Drawer
-        open={open}
-        onOpenChange={handleDrawerOpenChange}
-        direction={isMobile ? "bottom" : "right"}
-      >
+      <Drawer open={open} onOpenChange={handleDrawerOpenChange} direction={isMobile ? "bottom" : "right"}>
         <DrawerContent
           className={cn(
             "group/drawer-content bg-background fixed z-50 flex h-auto flex-col",
@@ -819,13 +671,9 @@ function VerifyDocumentsDrawer({
           <div className="group-data-[vaul-drawer-direction=bottom]/drawer-content:block mx-auto mt-4 hidden h-2 w-[100px] shrink-0 rounded-full bg-[#050505]" />
 
           <DrawerHeader className="gap-1 px-4 sm:px-6">
-            <DrawerTitle className="text-[20px] font-semibold text-foreground">
-              Verificação de Identidade
-            </DrawerTitle>
+            <DrawerTitle className="text-[20px] font-semibold text-foreground">Verificação de Identidade</DrawerTitle>
             <DrawerDescription className="text-[15px] leading-relaxed text-muted-foreground">
-              Para liberar limites maiores (PIX, cartão etc.), confirme quem é
-              você. Envie um documento oficial com foto e valide sua selfie em
-              tempo real.
+              Para liberar limites maiores (PIX, cartão etc.), confirme quem é você.
             </DrawerDescription>
           </DrawerHeader>
 
@@ -834,299 +682,213 @@ function VerifyDocumentsDrawer({
             <div className="grid gap-4 text-[13px] leading-relaxed">
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Nome completo
-                  </label>
-                  <input
-                    readOnly
-                    value={displayName}
-                    className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
-                  />
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Nome completo</label>
+                  <input readOnly value={displayName} className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
                 </div>
-
                 <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    CPF / CNPJ
-                  </label>
-                  <input
-                    readOnly
-                    value={cpfOrCnpj}
-                    className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
-                  />
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">CPF / CNPJ</label>
+                  <input readOnly value={cpfOrCnpj} className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    E-mail
-                  </label>
-                  <input
-                    readOnly
-                    value={email}
-                    className="w-full break-all select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
-                  />
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">E-mail</label>
+                  <input readOnly value={email} className="w-full break-all select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
                 </div>
-
                 <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Telefone
-                  </label>
-                  <input
-                    readOnly
-                    value={phone}
-                    className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
-                  />
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Telefone</label>
+                  <input readOnly value={phone} className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
                 </div>
               </div>
             </div>
 
             <Separator />
 
-            {/* DOCUMENTO ENVIADO */}
-            <div className="grid gap-2">
-              <div className="text-[16px] font-medium text-foreground">
-                Documento enviado
-              </div>
-
-              <div className="text-[14px] leading-snug text-muted-foreground">
-                Essas são as imagens que você confirmou. Se algo estiver errado,
-                você pode reenviar.
-              </div>
-
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={submitted ? undefined : handleOpenUploadModal}
-                onKeyDown={(e) => {
-                  if (submitted) return;
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    handleOpenUploadModal();
-                  }
-                }}
-                className={cn(
-                  "group relative w-full rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-4 text-left outline-none transition-colors",
-                  submitted
-                    ? "cursor-not-allowed opacity-60"
-                    : "cursor-pointer hover:border-neutral-500/80 hover:bg-neutral-900/40 focus:ring-2 focus:ring-neutral-600/50"
-                )}
-              >
-                {frontConfirmed || backConfirmed ? (
-                  <div className="grid w-full gap-4 sm:grid-cols-2">
-                    {/* Frente */}
-                    <div className="relative h-[160px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
-                      {frontConfirmed ? (
-                        <>
-                          <img
-                            src={frontConfirmed}
-                            alt="Frente confirmada"
-                            className="absolute inset-0 h-full w-full object-contain"
-                          />
-                          <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
-                            <button
-                              type="button"
-                              onClick={submitted ? undefined : handleRemoveFront}
-                              disabled={submitted}
-                              className={cn(
-                                "inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold text-white",
-                                submitted
-                                  ? "cursor-not-allowed bg-black/40"
-                                  : "bg-black/70 hover:bg-black/90"
-                              )}
-                              title="Remover frente"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                          <div className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-[10px] font-medium text-white ring-1 ring-white/20">
-                            Frente
-                          </div>
-                        </>
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-[11px] text-muted-foreground">
-                          Frente pendente
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Verso */}
-                    <div className="relative h-[160px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
-                      {backConfirmed ? (
-                        <>
-                          <img
-                            src={backConfirmed}
-                            alt="Verso confirmada"
-                            className="absolute inset-0 h-full w-full object-contain"
-                          />
-                          <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
-                            <button
-                              type="button"
-                              onClick={submitted ? undefined : handleRemoveBack}
-                              disabled={submitted}
-                              className={cn(
-                                "inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold text-white",
-                                submitted
-                                  ? "cursor-not-allowed bg-black/40"
-                                  : "bg-black/70 hover:bg-black/90"
-                              )}
-                              title="Remover verso"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                          <div className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-[10px] font-medium text-white ring-1 ring-white/20">
-                            Verso
-                          </div>
-                        </>
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-[11px] text-muted-foreground">
-                          Verso pendente
-                        </div>
-                      )}
-                    </div>
+            {/* ======= CONTEÚDO PRINCIPAL ======= */}
+            {inlineSuccess ? (
+              // substitui os dois blocos pontilhados por uma confirmação central
+              <InlineConfirmation />
+            ) : (
+              <>
+                {/* DOCUMENTO ENVIADO (quadro pontilhado) */}
+                <div className="grid gap-2">
+                  <div className="text-[16px] font-medium text-foreground">Documento enviado</div>
+                  <div className="text-[14px] leading-snug text-muted-foreground">
+                    Essas são as imagens que você confirmou. Se algo estiver errado, você pode reenviar.
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-neutral-800/60 text-[11px] font-semibold text-foreground ring-1 ring-border">
-                      DOC
-                    </div>
-                    <div className="flex flex-col gap-1 text-center text-[12px] leading-tight">
-                      <span className="font-medium text-foreground">
-                        Enviar documento
-                      </span>
-                      <span className="text-muted-foreground">
-                        Frente e verso • obrigatório
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
 
-              {submitError && (
-                <div className="text-[12px] text-red-400">{submitError}</div>
-              )}
-
-              <div className="text-[14px] leading-relaxed text-muted-foreground">
-                • Documento precisa estar legível (sem blur / sem corte).
-                <br />
-                • Não use filtros pesados nem tampe informação.
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* SELFIE */}
-            <div className="grid gap-2 pt-2">
-              <div className="text-[16px] font-medium text-foreground">
-                Selfie de verificação
-              </div>
-
-              <div className="text-[14px] leading-snug text-muted-foreground">
-                Aponte a câmera do seu celular para o QR e siga as instruções.
-              </div>
-
-              <div
-                className={cn(
-                  "flex flex-col items-center justify-center",
-                  "rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-8 text-center transition-colors hover:border-neutral-500/80 hover:bg-neutral-900/40"
-                )}
-              >
-                <div className="relative flex h-[200px] w-[200px] items-center justify-center overflow-hidden rounded-md bg-white">
-                  {/* estado 1: carregando sessão QR */}
-                  {qrLoading && !selfiePreview && (
-                    <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[11px] font-semibold text-neutral-400 ring-1 ring-border">
-                      Gerando QR...
-                    </div>
-                  )}
-
-                  {/* estado 2: erro ao gerar sessão */}
-                  {qrError && !selfiePreview && (
-                    <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 px-4 text-center text-[11px] font-semibold leading-relaxed text-red-400 ring-1 ring-border">
-                      {qrError}
-                    </div>
-                  )}
-
-                  {/* estado 3: selfie já recebida */}
-                  {selfiePreview && (
-                    <div className="relative h-[200px] w-[200px] overflow-hidden rounded-md bg-neutral-900 ring-2 ring-[#26FF59]/60 shadow-[0_0_40px_#26FF5966]">
-                      <img
-                        src={selfiePreview}
-                        alt="Selfie capturada"
-                        className="absolute inset-0 h-full w-full object-cover"
-                      />
-
-                      <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
-                        <button
-                          type="button"
-                          onClick={submitted ? undefined : handleRemoveSelfie}
-                          disabled={submitted}
-                          className={cn(
-                            "inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold text-white",
-                            submitted
-                              ? "cursor-not-allowed bg-black/40"
-                              : "bg-black/70 hover:bg-black/90"
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={handleOpenUploadModal}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleOpenUploadModal();
+                      }
+                    }}
+                    className={cn(
+                      "group relative w-full cursor-pointer rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-4 text-left outline-none transition-colors hover:border-neutral-500/80 hover:bg-neutral-900/40 focus:ring-2 focus:ring-neutral-600/50"
+                    )}
+                  >
+                    {frontConfirmed || backConfirmed ? (
+                      <div className="grid w-full gap-4 sm:grid-cols-2">
+                        {/* Frente */}
+                        <div className="relative h-[160px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
+                          {frontConfirmed ? (
+                            <>
+                              <img src={frontConfirmed} alt="Frente confirmada" className="absolute inset-0 h-full w-full object-contain" />
+                              <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                                <button
+                                  type="button"
+                                  onClick={handleRemoveFront}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
+                                  title="Remover frente"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              <div className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-[10px] font-medium text-white ring-1 ring-white/20">
+                                Frente
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-[11px] text-muted-foreground">Frente pendente</div>
                           )}
-                          title="Remover selfie e gerar novo QR"
-                        >
-                          ✕
-                        </button>
+                        </div>
+
+                        {/* Verso */}
+                        <div className="relative h-[160px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
+                          {backConfirmed ? (
+                            <>
+                              <img src={backConfirmed} alt="Verso confirmada" className="absolute inset-0 h-full w-full object-contain" />
+                              <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                                <button
+                                  type="button"
+                                  onClick={handleRemoveBack}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
+                                  title="Remover verso"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              <div className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-[10px] font-medium text-white ring-1 ring-white/20">
+                                Verso
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-[11px] text-muted-foreground">Verso pendente</div>
+                          )}
+                        </div>
                       </div>
-
-                      <div className="absolute inset-x-0 bottom-0 z-10 bg-black/70 py-2 text-center text-[0.7rem] font-medium text-white">
-                        Selfie enviada com sucesso
+                    ) : (
+                      <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-neutral-800/60 text-[11px] font-semibold text-foreground ring-1 ring-border">
+                          DOC
+                        </div>
+                        <div className="flex flex-col gap-1 text-center text-[12px] leading-tight">
+                          <span className="font-medium text-foreground">Enviar documento</span>
+                          <span className="text-muted-foreground">Frente e verso • obrigatório</span>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
-                  {/* estado 4: exibir QRCode */}
-                  {!qrLoading && !qrError && !selfiePreview && qrUrl && (
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
-                        qrUrl
-                      )}`}
-                      alt="QR code para verificação facial"
-                      className="h-[190px] w-[190px] rounded-md bg-white object-contain ring-border"
-                    />
-                  )}
+                  {submitError && <div className="text-[12px] text-red-400">{submitError}</div>}
 
-                  {!qrLoading && !qrError && !selfiePreview && !qrUrl && (
-                    <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[10px] font-semibold text-neutral-400 ring-1 ring-border">
-                      QR CODE
-                    </div>
-                  )}
+                  <div className="text-[14px] leading-relaxed text-muted-foreground">
+                    • Documento legível (sem blur / sem corte).<br />• Não use filtros pesados nem tampe informação.
+                  </div>
                 </div>
-              </div>
 
-              <div className="text-[13px] leading-relaxed text-muted-foreground">
-                • Boa iluminação e rosto totalmente visível.
-                <br />
-                • Sem óculos escuros, máscara ou boné cobrindo o rosto.
-              </div>
-            </div>
+                <Separator />
+
+                {/* SELFIE / QR */}
+                <div className="grid gap-2 pt-2">
+                  <div className="text-[16px] font-medium text-foreground">Selfie de verificação</div>
+                  <div className="text-[14px] leading-snug text-muted-foreground">Aponte a câmera do seu celular para o QR e siga as instruções.</div>
+
+                  <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-8 text-center transition-colors hover:border-neutral-500/80 hover:bg-neutral-900/40">
+                    <div className="relative flex h-[200px] w-[200px] items-center justify-center overflow-hidden rounded-md bg-white">
+                      {/* Carregando */}
+                      {qrLoading && !selfiePreview && (
+                        <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[11px] font-semibold text-neutral-400 ring-1 ring-border">
+                          Gerando QR...
+                        </div>
+                      )}
+
+                      {/* Erro */}
+                      {qrError && !selfiePreview && (
+                        <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 px-4 text-center text-[11px] font-semibold leading-relaxed text-red-400 ring-1 ring-border">
+                          {qrError}
+                        </div>
+                      )}
+
+                      {/* Selfie ok */}
+                      {selfiePreview && (
+                        <div className="relative h-[200px] w-[200px] overflow-hidden rounded-md bg-neutral-900 ring-2 ring-[#26FF59]/60 shadow-[0_0_40px_#26FF5966]">
+                          <img src={selfiePreview} alt="Selfie capturada" className="absolute inset-0 h-full w-full object-cover" />
+                          <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                            <button
+                              type="button"
+                              onClick={handleRemoveSelfie}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
+                              title="Remover selfie e gerar novo QR"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="absolute inset-x-0 bottom-0 z-10 bg-black/70 py-2 text-center text-[0.7rem] font-medium text-white">
+                            Selfie enviada com sucesso
+                          </div>
+                        </div>
+                      )}
+
+                      {/* QR */}
+                      {!qrLoading && !qrError && !selfiePreview && qrUrl && (
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`}
+                          alt="QR code para verificação facial"
+                          className="h-[190px] w-[190px] rounded-md bg-white object-contain ring-border"
+                        />
+                      )}
+
+                      {/* Fallback */}
+                      {!qrLoading && !qrError && !selfiePreview && !qrUrl && (
+                        <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 text-[10px] font-semibold text-neutral-400 ring-1 ring-border">
+                          QR CODE
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-[13px] leading-relaxed text-muted-foreground">
+                    • Boa iluminação e rosto totalmente visível.<br />• Sem óculos escuros, máscara ou boné cobrindo o rosto.
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <DrawerFooter className="gap-2 px-4 pb-4 pt-0 sm:px-6">
             <Button
               size="sm"
               className={cn(
-                "w-full rounded-md bg-[#26FF59]/90 py-5 text-[14px] font-semibold text-black hover:bg-[#26FF59]",
-                !canSend && "pointer-events-none cursor-not-allowed opacity-30",
-                submitted && "pointer-events-none cursor-not-allowed opacity-60"
+                "w-full rounded-md py-5 text-[14px] font-semibold",
+                inlineSuccess
+                  ? "cursor-not-allowed bg-[#26FF59]/20 text-[#26FF59] opacity-80"
+                  : "bg-[#26FF59]/90 text-black hover:bg-[#26FF59]"
               )}
               onClick={handleSubmitDocument}
-              disabled={!canSend || submitted || submitting}
+              disabled={inlineSuccess || !canSend || submitting}
             >
-              {submitting ? "Enviando..." : "Enviar documento"}
+              {inlineSuccess ? "Em validação" : submitting ? "Enviando..." : "Enviar documento"}
             </Button>
 
             <DrawerClose asChild>
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full cursor-pointer py-5 text-[14px] font-semibold"
-              >
-                Cancelar
+              <Button size="sm" variant="outline" className="w-full cursor-pointer py-5 text-[14px] font-semibold">
+                Fechar
               </Button>
             </DrawerClose>
           </DrawerFooter>
@@ -1137,21 +899,37 @@ function VerifyDocumentsDrawer({
 }
 
 /* -------------------------------------------------
-   Wrapper section (alerta + drawer) — controla bloqueio do alerta
+   Wrapper (alerta + drawer) com verificação no F5
 -------------------------------------------------- */
 export function VerifyDocumentsSection({
   user,
 }: {
-  user: {
-    id: number;
-    name: string;
-    email: string;
-    cpfOrCnpj: string;
-    phone: string;
-  };
+  user: { id: number; name: string; email: string; cpfOrCnpj: string; phone: string };
 }) {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
-  const [inReview, setInReview] = React.useState(false); // trava alerta e mostra selo
+  const [inReview, setInReview] = React.useState(false);
+
+  // Checa no load (e no F5) se já está em análise/aprovado
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/envite-docs", { method: "GET", cache: "no-store" });
+        const data = await res.json();
+        if (!alive) return;
+        if (res.ok && data?.success) {
+          setInReview(!!data.locked);
+        } else {
+          setInReview(false);
+        }
+      } catch {
+        setInReview(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <>
@@ -1165,8 +943,9 @@ export function VerifyDocumentsSection({
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         user={user}
+        lockedFromServer={inReview}
         onSubmitted={() => {
-          setInReview(true); // após enviar, bloqueia o alerta
+          setInReview(true); // trava alerta e mantém confirmação inline
         }}
       />
     </>
