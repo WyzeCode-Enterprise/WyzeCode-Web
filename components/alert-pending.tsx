@@ -959,20 +959,15 @@ function VerifyDocumentsDrawer({
                       />
 
                       {/* barra top com X */}
-                      <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                      <div className="absolute inset-x-0 top-0 z-10 flex justify-end px-2 py-2">
                         <button
                           type="button"
                           onClick={handleRemoveSelfie}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-full   text-[11px] font-semibold text-white hover:bg-black/90"
                           title="Remover selfie e gerar novo QR"
                         >
                           ✕
                         </button>
-                      </div>
-
-                      {/* badge sucesso bottom */}
-                      <div className="absolute inset-x-0 bottom-0 z-10 bg-black/70 py-2 text-center text-[0.7rem] font-medium text-white">
-                        Selfie enviada com sucesso
                       </div>
                     </div>
                   )}
