@@ -504,24 +504,24 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const expiredNow = isExpiredWithGrace(sess.expires_at);
+    // const expiredNow = isExpiredWithGrace(sess.expires_at);
 
-    // expirou antes de capturar (timeout da sessão facial)
-    if (expiredNow && sess.status === "pending_face") {
-      await db.query(
-        `
-          UPDATE face_sessions
-          SET status = 'expired'
-          WHERE id = ?
-        `,
-        [sess.face_session_id]
-      );
+    // // expirou antes de capturar (timeout da sessão facial)
+    // if (expiredNow && sess.status === "pending_face") {
+    //   await db.query(
+    //     `
+    //       UPDATE face_sessions
+    //       SET status = 'expired'
+    //       WHERE id = ?
+    //     `,
+    //     [sess.face_session_id]
+    //   );
 
-      return jsonNoStore(
-        { error: "Sessão expirada, gere outro QR." },
-        { status: 400 }
-      );
-    }
+    //   return jsonNoStore(
+    //     { error: "Sessão expirada, gere outro QR." },
+    //     { status: 400 }
+    //   );
+    // }
 
     // se já não está mais pending_face, bloqueia reuso
     if (sess.status !== "pending_face") {
