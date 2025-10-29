@@ -345,13 +345,18 @@ function UploadModal({
                   alt="Frente documento"
                   className="absolute inset-0 h-full w-full object-contain"
                 />
-                <button
-                  type="button"
-                  onClick={handleRemoveFrontClick}
-                  className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
-                >
-                  ✕
-                </button>
+
+                {/* X da frente */}
+                <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                  <button
+                    type="button"
+                    onClick={handleRemoveFrontClick}
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
+                    title="Remover frente"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="pointer-events-none flex flex-col items-center gap-2 text-muted-foreground">
@@ -401,13 +406,18 @@ function UploadModal({
                   alt="Verso documento"
                   className="absolute inset-0 h-full w-full object-contain"
                 />
-                <button
-                  type="button"
-                  onClick={handleRemoveBackClick}
-                  className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
-                >
-                  ✕
-                </button>
+
+                {/* X do verso */}
+                <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                  <button
+                    type="button"
+                    onClick={handleRemoveBackClick}
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
+                    title="Remover verso"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="pointer-events-none flex flex-col items-center gap-2 text-muted-foreground">
@@ -514,7 +524,8 @@ function VerifyDocumentsDrawer({
 
   // cria/renova sessão facial e QR
   const bootstrapQRSession = React.useCallback(async () => {
-    if (selfiePreview) return; // se já tem selfie, não precisa QR
+    // se já tem selfie salva, não faz sentido gerar novo QR aqui
+    if (selfiePreview) return;
 
     try {
       setQrLoading(true);
@@ -535,14 +546,13 @@ function VerifyDocumentsDrawer({
         return;
       }
 
-      // caso o backend já tenha selfie capturada
+      // se backend já tinha selfie
       if (data.status === "face_captured" && data.selfie_b64) {
         setSelfiePreview((prev) => prev || data.selfie_b64);
         setQrLoading(false);
         return;
       }
 
-      // sessão ativa -> atualiza ticket/url
       setSessionTicket(data.session || null);
       setQrUrl(data.url || null);
 
@@ -560,19 +570,13 @@ function VerifyDocumentsDrawer({
       bootstrappedRef.current = false;
       return;
     }
-
     if (bootstrappedRef.current) return;
-
-    if (selfiePreview) {
-      bootstrappedRef.current = true;
-      return;
-    }
 
     bootstrappedRef.current = true;
     bootstrapQRSession();
-  }, [open, selfiePreview, bootstrapQRSession]);
+  }, [open, bootstrapQRSession]);
 
-  // polling da selfie
+  // polling da selfie (fica checando se já chegou selfie_captured)
   React.useEffect(() => {
     if (!open) return;
     if (!sessionTicket) return;
@@ -599,20 +603,6 @@ function VerifyDocumentsDrawer({
           setSelfiePreview((prev) => prev || data.selfie_b64);
           return;
         }
-
-        // sessão expirada sem selfie:
-        // limpa ticket/url e gera outra sessão só UMA VEZ a partir daqui
-        if (data.status === "expired" && !data.selfie_b64) {
-          console.warn(
-            "Sessão facial expirou sem selfie, regenerando sessão..."
-          );
-
-          setSessionTicket(null);
-          setQrUrl(null);
-
-          bootstrappedRef.current = false;
-          bootstrapQRSession();
-        }
       } catch (err) {
         console.warn("Polling falhou:", err);
       }
@@ -624,9 +614,51 @@ function VerifyDocumentsDrawer({
     return () => {
       clearInterval(intervalId);
     };
-  }, [open, sessionTicket, selfiePreview, bootstrapQRSession]);
+  }, [open, sessionTicket, selfiePreview]);
 
-  // helpers do modal
+  // remover selfie:
+  // - chama DELETE /api/qrface pra resetar no backend
+  // - backend devolve nova sessão + novo QR
+  async function handleRemoveSelfie(
+    e: React.MouseEvent<HTMLButtonElement, MouseEvent>
+  ) {
+    e.stopPropagation();
+
+    try {
+      setQrLoading(true);
+      setQrError(null);
+
+      const resp = await fetch("/api/qrface", {
+        method: "DELETE",
+        cache: "no-store",
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        console.error("Falha ao remover selfie:", data);
+        setQrError(data.error || "Erro ao reiniciar verificação facial.");
+        setQrLoading(false);
+        return;
+      }
+
+      // limpamos selfie local
+      setSelfiePreview(null);
+
+      // backend já resetou status da mesma sessão facial,
+      // devolveu session/url novas:
+      setSessionTicket(data.session || null);
+      setQrUrl(data.url || null);
+
+      setQrLoading(false);
+    } catch (err) {
+      console.error("Erro de rede ao remover selfie:", err);
+      setQrError("Falha de rede ao reiniciar verificação facial.");
+      setQrLoading(false);
+    }
+  }
+
+  // helpers do modal documento
   function handleConfirmUpload(
     finalFrontB64: string | null,
     finalBackB64: string | null
@@ -801,13 +833,19 @@ function VerifyDocumentsDrawer({
                             alt="Frente confirmada"
                             className="absolute inset-0 h-full w-full object-contain"
                           />
-                          <button
-                            type="button"
-                            onClick={handleRemoveFront}
-                            className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
-                          >
-                            ✕
-                          </button>
+
+                          {/* X da frente confirmada */}
+                          <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                            <button
+                              type="button"
+                              onClick={handleRemoveFront}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
+                              title="Remover frente"
+                            >
+                              ✕
+                            </button>
+                          </div>
+
                           <div className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-[10px] font-medium text-white ring-1 ring-white/20">
                             Frente
                           </div>
@@ -828,13 +866,19 @@ function VerifyDocumentsDrawer({
                             alt="Verso confirmada"
                             className="absolute inset-0 h-full w-full object-contain"
                           />
-                          <button
-                            type="button"
-                            onClick={handleRemoveBack}
-                            className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
-                          >
-                            ✕
-                          </button>
+
+                          {/* X do verso confirmado */}
+                          <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                            <button
+                              type="button"
+                              onClick={handleRemoveBack}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
+                              title="Remover verso"
+                            >
+                              ✕
+                            </button>
+                          </div>
+
                           <div className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-[10px] font-medium text-white ring-1 ring-white/20">
                             Verso
                           </div>
@@ -907,11 +951,30 @@ function VerifyDocumentsDrawer({
 
                   {/* estado 3: selfie já recebida */}
                   {selfiePreview && (
-                    <img
-                      src={selfiePreview}
-                      alt="Selfie capturada"
-                      className="h-[200px] w-[200px] object-cover"
-                    />
+                    <div className="relative h-[200px] w-[200px] overflow-hidden rounded-md bg-neutral-900 ring-2 ring-[#26FF59]/60 shadow-[0_0_40px_#26FF5966]">
+                      <img
+                        src={selfiePreview}
+                        alt="Selfie capturada"
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+
+                      {/* barra top com X */}
+                      <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                        <button
+                          type="button"
+                          onClick={handleRemoveSelfie}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
+                          title="Remover selfie e gerar novo QR"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      {/* badge sucesso bottom */}
+                      <div className="absolute inset-x-0 bottom-0 z-10 bg-black/70 py-2 text-center text-[0.7rem] font-medium text-white">
+                        Selfie enviada com sucesso
+                      </div>
+                    </div>
                   )}
 
                   {/* estado 4: exibir QRCode */}
