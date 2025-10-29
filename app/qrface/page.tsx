@@ -71,8 +71,6 @@ export default function QRFacePage() {
         const data = await res.json();
 
         if (!res.ok) {
-          // mesmo se backend reclamar de "expirada", não vamos travar tudo
-          // só avisamos erro e impedimos captura (done=true)
           setErrorMsg(
             data.error ||
               "Sessão inválida. Abra novamente o QR pelo app."
@@ -81,12 +79,16 @@ export default function QRFacePage() {
           return;
         }
 
-        // regra nova:
+        // regra:
         // - se backend já tem selfie => status face_captured
         // - qualquer outro status => tratar como "pending_face"
         let mappedStatus: TokenStatus;
         if (data.status === "face_captured") {
           mappedStatus = "face_captured";
+        } else if (data.status === "blocked") {
+          mappedStatus = "blocked";
+        } else if (data.status === "validated") {
+          mappedStatus = "validated";
         } else {
           mappedStatus = "pending_face";
         }
@@ -163,9 +165,7 @@ export default function QRFacePage() {
       return;
     }
 
-    // agora a gente NÃO bloqueia por 'expired', pq não existe mais expiração.
-    // mas se o backend marcou a sessão como finalizada (face_captured),
-    // ou marcada como bloqueada/validada, aí sim bloqueia.
+    // sessão só fica bloqueada se já finalizou MESMO
     const sessionIsClearlyFinished =
       tokenStatus === "face_captured" ||
       tokenStatus === "blocked" ||
@@ -284,8 +284,7 @@ export default function QRFacePage() {
   async function handleCaptureAndSend() {
     if (done) return;
 
-    // só bloqueia se já foi finalizado ou bloqueado,
-    // mas NÃO bloqueia mais por "expired"
+    // só bloqueia se já foi finalizado / bloqueado / validado
     if (
       tokenStatus === "face_captured" ||
       tokenStatus === "blocked" ||
@@ -381,8 +380,6 @@ export default function QRFacePage() {
   // ==========================================================
   // 7. helpers de UI
   // ==========================================================
-  // sessão considerada "não dá mais pra capturar"
-  // (mas não existe mais o conceito de "expired")
   const sessionIsClearlyFinished =
     tokenStatus === "face_captured" ||
     tokenStatus === "blocked" ||
@@ -395,7 +392,6 @@ export default function QRFacePage() {
     !askingPermission &&
     !capturing;
 
-  // step visual atual
   const step =
     tokenStatus === "face_captured" || done
       ? 3
@@ -617,7 +613,6 @@ export default function QRFacePage() {
         {/* Steps */}
         <div className="flex flex-col items-center gap-2">
           <StepIndicator />
-          {/* Countdown removido completamente */}
         </div>
 
         {/* Header */}
