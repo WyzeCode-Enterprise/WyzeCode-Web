@@ -1,6 +1,11 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 type TokenStatus =
   | "unknown"
@@ -11,38 +16,40 @@ type TokenStatus =
   | "validated";
 
 export default function QRFacePage() {
-  // refs DOM
+  // DOM refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // sessão do QR (ticket curto JWT que veio na URL)
+  // ticket curto que veio na URL (?session=...)
   const [sessionTicket, setSessionTicket] = useState<string | null>(null);
 
-  // status da sessão no servidor
+  // status da sessão no backend
   const [tokenStatus, setTokenStatus] = useState<TokenStatus>("unknown");
 
-  // preview da selfie já recebida (remoto ou local)
+  // selfie já capturada (server OU local)
   const [selfiePreview, setSelfiePreview] = useState<string | null>(null);
 
-  // câmera / captura
+  // camera
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraTryingPlay, setCameraTryingPlay] = useState(false);
 
-  // permissão / UX
+  // UX flags
   const [askingPermission, setAskingPermission] = useState(false);
   const [permissionAsked, setPermissionAsked] = useState(false);
 
-  // envio da selfie
+  // envio
   const [capturing, setCapturing] = useState(false);
   const [done, setDone] = useState(false);
 
-  // mensagem de erro/alerta
+  // erros/user messages
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // ===========================================================
-  // 1. Ler sessionTicket da URL e validar com backend
-  // ===========================================================
+  // contador de expiração (segundos restantes dados pelo backend GET)
+  const [expiresInSec, setExpiresInSec] = useState<number | null>(null);
+
+  // =============== 1. bootstrap inicial ===============
+  // Lê ?session=... da URL, chama GET /api/qrface pra validar
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
     const rawSession = sp.get("session");
@@ -77,7 +84,8 @@ export default function QRFacePage() {
           return;
         }
 
-        const currentStatus: TokenStatus =
+        // mapeia status vindo da API
+        const mappedStatus: TokenStatus =
           data.status === "pending_face"
             ? "pending_face"
             : data.status === "face_captured"
@@ -90,15 +98,20 @@ export default function QRFacePage() {
             ? "validated"
             : "unknown";
 
-        setTokenStatus(currentStatus);
+        setTokenStatus(mappedStatus);
 
-        // se já tem selfie no banco (talvez o cara reabriu o link depois)
-        if (currentStatus === "face_captured" && data.selfie_b64) {
+        // timer de expiração
+        if (typeof data.expires_in_sec === "number") {
+          setExpiresInSec(data.expires_in_sec);
+        }
+
+        // se o backend já tem selfie (ex: user reabriu o link depois de capturar)
+        if (mappedStatus === "face_captured" && data.selfie_b64) {
           setSelfiePreview(data.selfie_b64);
           setDone(true);
         }
 
-        if (currentStatus === "expired") {
+        if (mappedStatus === "expired") {
           setErrorMsg("Esse QR expirou. Gere outro QR no app.");
           setDone(true);
         }
@@ -111,9 +124,31 @@ export default function QRFacePage() {
     })();
   }, []);
 
-  // ===========================================================
-  // 2. Helper: ligar o stream no <video> e tentar autoplay
-  // ===========================================================
+  // =============== 1.1. countdown da expiração ===============
+  useEffect(() => {
+    if (expiresInSec === null) return;
+    if (done) return;
+    if (
+      tokenStatus === "expired" ||
+      tokenStatus === "blocked" ||
+      tokenStatus === "validated" ||
+      tokenStatus === "face_captured"
+    ) {
+      return;
+    }
+
+    const id = setInterval(() => {
+      setExpiresInSec((prev) => {
+        if (prev === null) return prev;
+        if (prev <= 1) return 0;
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, [expiresInSec, done, tokenStatus]);
+
+  // =============== 2. attach stream no <video> ===============
   const attachStreamToVideo = useCallback(async (media: MediaStream) => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -127,7 +162,7 @@ export default function QRFacePage() {
         .then(() => {
           setCameraReady(true);
           setCameraTryingPlay(false);
-          // limpa msg "toque no vídeo..." se ela era o erro atual
+          // limpa "toque no vídeo..." se ela tava no erro
           setErrorMsg((msg) =>
             msg ===
             "Toque no vídeo para liberar a câmera se ela estiver preta."
@@ -137,7 +172,7 @@ export default function QRFacePage() {
         })
         .catch((err) => {
           console.warn("Falha ao dar play automático:", err);
-          // iOS Safari precisa de interação do usuário
+          // iOS Safari precisa interação
           setCameraReady(false);
           setCameraTryingPlay(false);
           setErrorMsg(
@@ -157,11 +192,7 @@ export default function QRFacePage() {
     }
   }, []);
 
-  // ===========================================================
-  // 3. Pedir permissão da câmera (botão "Ativar câmera")
-  //    Agora deixamos pedir mesmo se tokenStatus ainda tá "unknown"
-  //    Só bloqueia se já sabemos que expirou/bloqueou.
-  // ===========================================================
+  // =============== 3. pedir câmera ===============
   const requestCameraAccess = useCallback(async () => {
     if (askingPermission || capturing) return;
     if (done) return;
@@ -189,7 +220,7 @@ export default function QRFacePage() {
 
     async function getMediaFrontFirstThenFallback() {
       try {
-        // tenta câmera frontal
+        // tenta frontal primeiro
         const mediaFront = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "user" },
@@ -200,8 +231,9 @@ export default function QRFacePage() {
         });
         return mediaFront;
       } catch {
-        // se frontal falhou (desktop, etc), tenta qualquer camera
+        // fallback: qualquer câmera
       }
+
       const mediaAny = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: false,
@@ -235,11 +267,16 @@ export default function QRFacePage() {
     } finally {
       setAskingPermission(false);
     }
-  }, [askingPermission, capturing, done, sessionTicket, tokenStatus, attachStreamToVideo]);
+  }, [
+    askingPermission,
+    capturing,
+    done,
+    sessionTicket,
+    tokenStatus,
+    attachStreamToVideo,
+  ]);
 
-  // ===========================================================
-  // 4. Cleanup: parar a câmera ao sair da tela
-  // ===========================================================
+  // =============== 4. cleanup câmera ===============
   useEffect(() => {
     return () => {
       if (stream) {
@@ -248,9 +285,7 @@ export default function QRFacePage() {
     };
   }, [stream]);
 
-  // ===========================================================
-  // 5. Tentativa manual de play() tocando no vídeo
-  // ===========================================================
+  // =============== 5. tentar play manual ===============
   function handleManualPlay() {
     if (!videoRef.current) return;
     if (cameraReady) return;
@@ -274,13 +309,7 @@ export default function QRFacePage() {
       });
   }
 
-  // ===========================================================
-  // 6. Capturar frame atual e enviar para o backend via PUT
-  //    Depois disso:
-  //    - seta selfiePreview local
-  //    - marca sessão como concluída
-  //    - para câmera
-  // ===========================================================
+  // =============== 6. capturar frame e enviar ===============
   async function handleCaptureAndSend() {
     if (done) return;
 
@@ -330,7 +359,7 @@ export default function QRFacePage() {
       return;
     }
 
-    // espelha igual selfie (flip horizontal)
+    // flip horizontal tipo espelho/selfie
     ctx.save();
     ctx.scale(-1, 1);
     ctx.drawImage(videoEl, -w, 0, w, h);
@@ -358,12 +387,16 @@ export default function QRFacePage() {
         return;
       }
 
-      // sucesso → trava e mostra preview
+      // sucesso -> fixa a selfie e encerra
       setSelfiePreview(data.selfiePreview || dataUrl);
       setTokenStatus("face_captured");
       setDone(true);
 
-      // corta a câmera (privacidade / economia)
+      if (typeof data.expires_in_sec === "number") {
+        setExpiresInSec(data.expires_in_sec);
+      }
+
+      // corta câmera (privacidade)
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
       }
@@ -375,9 +408,7 @@ export default function QRFacePage() {
     }
   }
 
-  // ===========================================================
-  // 7. UI helpers
-  // ===========================================================
+  // =============== 7. UI helpers ===============
   const sessionIsClearlyInvalid =
     tokenStatus === "expired" ||
     tokenStatus === "blocked" ||
@@ -386,10 +417,78 @@ export default function QRFacePage() {
     done;
 
   const canAskCameraNow =
-    !!sessionTicket &&
-    !sessionIsClearlyInvalid &&
-    !askingPermission &&
-    !capturing;
+    !!sessionTicket && !sessionIsClearlyInvalid && !askingPermission && !capturing;
+
+  // etapa visual atual
+  const step =
+    tokenStatus === "face_captured" || done
+      ? 3
+      : permissionAsked
+      ? 2
+      : 1;
+
+  function StepIndicator() {
+    function bubble(label: string, num: number, active: boolean, doneStep: boolean) {
+      return (
+        <div className="flex items-center gap-2">
+          <div
+            className={[
+              "flex h-6 w-6 items-center justify-center rounded-full text-[0.7rem] font-semibold",
+              doneStep
+                ? "bg-[#26FF59] text-black shadow-[0_0_10px_rgba(38,255,89,0.6)]"
+                : active
+                ? "bg-white text-black"
+                : "bg-white/10 text-white/50 border border-white/20",
+            ].join(" ")}
+          >
+            {num}
+          </div>
+          <div
+            className={[
+              "text-[0.7rem] leading-none tracking-tight",
+              doneStep
+                ? "text-[#26FF59]"
+                : active
+                ? "text-white"
+                : "text-white/40",
+            ].join(" ")}
+          >
+            {label}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center justify-center gap-4 text-white/80 flex-wrap">
+        {bubble("Preparar", 1, step === 1, step > 1)}
+        <div className="hidden sm:block h-[1px] w-6 bg-white/20" />
+        {bubble("Capturar", 2, step === 2, step > 2)}
+        <div className="hidden sm:block h-[1px] w-6 bg-white/20" />
+        {bubble("Concluído", 3, step === 3, step > 3)}
+      </div>
+    );
+  }
+
+  function CountdownBadge() {
+    if (
+      expiresInSec === null ||
+      done ||
+      tokenStatus === "face_captured" ||
+      tokenStatus === "expired"
+    )
+      return null;
+
+    const mm = Math.floor(expiresInSec / 60);
+    const ss = expiresInSec % 60;
+    const ssPadded = ss < 10 ? `0${ss}` : String(ss);
+
+    return (
+      <div className="rounded-md border border-white/20 bg-white/5 px-2 py-1 text-[0.7rem] font-medium text-white/70 leading-none">
+        Expira em {mm}:{ssPadded}
+      </div>
+    );
+  }
 
   function FaceMaskOverlay() {
     if (selfiePreview) return null;
@@ -400,6 +499,7 @@ export default function QRFacePage() {
         aria-hidden="true"
       >
         <div className="relative w-[220px] h-[300px]">
+          {/* moldura verde com glow */}
           <div
             className="
               absolute inset-0
@@ -408,6 +508,7 @@ export default function QRFacePage() {
               shadow-[0_0_30px_rgba(38,255,89,0.55),0_0_70px_rgba(38,255,89,0.25)]
             "
           />
+          {/* vinheta escura fora do rosto */}
           <div
             className="
               absolute -inset-[100px]
@@ -549,35 +650,77 @@ export default function QRFacePage() {
     );
   }
 
+  // contador formatado pra UI principal
+  function renderExpiryInfo() {
+    if (
+      expiresInSec === null ||
+      done ||
+      tokenStatus === "face_captured" ||
+      tokenStatus === "expired"
+    ) {
+      return null;
+    }
+    const mm = Math.floor(expiresInSec / 60);
+    const ss = expiresInSec % 60;
+    const ssPadded = ss < 10 ? `0${ss}` : String(ss);
+
+    return (
+      <div className="text-[0.7rem] text-white/50 leading-none">
+        Esse passo expira em {mm}:{ssPadded}
+      </div>
+    );
+  }
+
   return (
     <main className="min-h-screen w-full flex items-center justify-center bg-[radial-gradient(circle_at_20%_20%,#1a1a1a_0%,#000000_70%)] text-white p-6">
       <div className="w-full max-w-[22rem] flex flex-col items-center gap-6 text-center">
+        {/* topo com steps + timer */}
+        <div className="flex flex-col items-center gap-2">
+          <StepIndicator />
+          <CountdownBadge />
+        </div>
+
+        {/* header principal */}
         <header className="flex flex-col gap-2">
           <h1 className="text-[1.1rem] font-semibold text-white tracking-tight">
             Verificação facial
           </h1>
-          <p className="text-[0.85rem] text-white/70 leading-relaxed">
-            Aponte o rosto para a área destacada. Quando estiver pronto, toque{" "}
-            em <strong className="text-white font-medium">Capturar</strong>.
+          <p className="text-[0.8rem] text-white/70 leading-relaxed">
+            Centralize seu rosto dentro da moldura verde.
+            Quando estiver pronto, toque em{" "}
+            <strong className="text-white font-medium">Capturar</strong>.
           </p>
         </header>
 
+        {/* bloco câmera / selfie */}
         {renderCameraBlock()}
 
-        {/* canvas escondido pra capturar frame jpeg */}
+        {/* canvas escondido só pra captura do frame JPEG */}
         <canvas ref={canvasRef} className="hidden" />
 
+        {/* mensagens de erro */}
         {errorMsg && (
           <div className="text-red-400 text-[0.75rem] leading-relaxed px-4">
             {errorMsg}
           </div>
         )}
 
+        {/* CTA principal */}
         {renderActionArea()}
 
-        <footer className="text-[0.7rem] text-white/40 text-center leading-relaxed max-w-[240px]">
-          Iluminação clara. Rosto totalmente visível. Sem óculos escuros,
-          boné ou máscara cobrindo o rosto.
+        {/* timer textual abaixo do botão, se ainda está rodando */}
+        {renderExpiryInfo()}
+
+        {/* nota de privacidade / instruções */}
+        <footer className="text-[0.7rem] text-white/40 text-center leading-relaxed max-w-[240px] space-y-2">
+          <div>
+            Iluminação clara. Rosto totalmente visível.
+            Nada cobrindo olhos, boca ou testa.
+          </div>
+          <div className="text-[0.65rem] text-white/30 leading-snug">
+            A imagem é usada apenas para confirmar sua identidade
+            e proteger sua conta. Ela é transmitida de forma segura.
+          </div>
         </footer>
       </div>
     </main>

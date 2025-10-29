@@ -1,13 +1,9 @@
+// /app/api/qrface/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "../db";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 
-/**
- * IMPORTANTE:
- * força essa rota a ser sempre dinâmica e sem cache
- * (Next não vai tentar cachear em edge / static).
- */
 export const dynamic = "force-dynamic";
 
 /**
@@ -21,23 +17,28 @@ const FACE_SESSION_SECRET =
   process.env.JWT_SECRET ||
   "supersecretkey";
 
+/* ------------------------------------------------------------------
+   Helpers utilitários
+------------------------------------------------------------------- */
+
 /**
- * Gera token interno grande só pra auditoria (não vai no QR direto).
+ * Gera blob randômico grandão pra auditoria interna.
+ * Não vai dentro do QR diretamente.
  */
 function generateInternalToken() {
   return crypto.randomBytes(150).toString("base64url");
 }
 
 /**
- * Código humano curto de suporte
+ * Código humano curto de suporte/suporte manual
+ * Ex: 493210
  */
 function generateWCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 /**
- * Cookie de sessão do dashboard (login web)
- * -> mesmo esquema do login.ts que você mandou
+ * Extrai o cookie wzb_lg cru do request
  */
 function getSessionCookie(req: NextRequest): string | null {
   const cookieHeader = req.headers.get("cookie") || "";
@@ -50,36 +51,50 @@ function getSessionCookie(req: NextRequest): string | null {
 }
 
 /**
- * Decodifica JWT do dashboard e extrai user_id
- * -> igual o login
+ * Decodifica o JWT de sessão (o MESMO do login),
+ * e retorna { uid, sid }.
+ *
+ * - uid = user.id
+ * - sid = identificador único daquela sessão de login (uuid v4 que vc grava em logins.cookie_session)
+ *
+ * Se não conseguir validar, retorna { uid: null, sid: null }
  */
-function getUserIdFromSessionToken(rawToken: string | null): number | null {
-  if (!rawToken) return null;
+function getSessionInfoFromCookie(
+  req: NextRequest
+): { uid: number | null; sid: string | null } {
+  const raw = getSessionCookie(req);
+  if (!raw) return { uid: null, sid: null };
   try {
     const decoded: any = jwt.verify(
-      rawToken,
+      raw,
       process.env.JWT_SECRET || "supersecretkey"
     );
-    if (!decoded || !decoded.uid) return null;
-    return decoded.uid;
+    if (!decoded || !decoded.uid || !decoded.sid) {
+      return { uid: null, sid: null };
+    }
+    return { uid: decoded.uid, sid: decoded.sid };
   } catch (err) {
     console.error("[qrface] JWT inválido:", err);
-    return null;
+    return { uid: null, sid: null };
   }
 }
 
 /**
- * Cria token curto assinado que vai pro celular.
- * payload mínimo -> { sid: <id interno da sessão> }
+ * Cria ticket curto assinado (vai dentro da URL do QR).
+ * Esse ticket TEM que ser curto e só contém { sid: <face_session_row_id> }
+ * OBS: NÃO confundir isso com o sid da sessão de login.
+ *
+ * expiresInSec ~ 5 minutos + tolerância de 2s.
  */
-function signFaceSessionTicket(sessionId: number) {
-  const payload = { sid: sessionId };
+function signFaceSessionTicket(faceSessionRowId: number) {
+  const payload = { sid: faceSessionRowId };
   const expiresInSec = TOKEN_LIFETIME_MIN * 60 + EXPIRE_GRACE_SECONDS;
   return jwt.sign(payload, FACE_SESSION_SECRET, { expiresIn: expiresInSec });
 }
 
 /**
- * Lê o ticket curto e devolve { sid } ou null se inválido / expirado
+ * Valida/decodifica o ticket curto.
+ * Retorna { sid: <face_session_row_id> } ou null.
  */
 function verifyFaceSessionTicket(
   ticket: string | null
@@ -90,42 +105,23 @@ function verifyFaceSessionTicket(
     if (!decoded || typeof decoded.sid !== "number") return null;
     return { sid: decoded.sid };
   } catch (err) {
-    console.warn("[qrface] session ticket inválido/expirado:", err);
+    console.warn("[qrface] ticket inválido/expirado:", err);
     return null;
   }
 }
 
 /**
- * sanity check básico da imagem
- * - tem que ser data:image/...
- * - limite de ~2.6MB base64
+ * Sanity check pra imagem base64
  */
 function isLikelySafeDataUrl(img: string): boolean {
   if (typeof img !== "string") return false;
   if (!img.startsWith("data:image/")) return false;
-  if (img.length > 2_600_000) return false;
+  if (img.length > 2_600_000) return false; // ~2.6MB base64
   return true;
 }
 
 /**
- * Marca sessões antigas 'pending_face' desse user como 'expired'
- * se já passou o prazo + grace.
- */
-async function expireStaleTokensForUser(userId: number) {
-  await db.query(
-    `
-      UPDATE wzb_tokens
-      SET status = 'expired'
-      WHERE user_id = ?
-        AND status = 'pending_face'
-        AND expires_at < (NOW() - INTERVAL ? SECOND)
-    `,
-    [userId, EXPIRE_GRACE_SECONDS]
-  );
-}
-
-/**
- * Verifica se expires_at já passou (com pequena folga)
+ * Checa se expirou MESMO considerando uma pequena folga
  */
 function isExpiredWithGrace(expires_at: any): boolean {
   if (!expires_at) return false;
@@ -135,38 +131,106 @@ function isExpiredWithGrace(expires_at: any): boolean {
 }
 
 /**
- * Busca sessão pelo ID interno (wzb_tokens.id)
+ * Segura: quanto tempo (em segundos) resta até expirar.
+ * Nunca retorna negativo. Se já passou, volta 0.
  */
-async function fetchSessionRowById(sessionId: number) {
+function secondsUntilExpiry(expires_at: any): number {
+  if (!expires_at) return 0;
+  const expMs = new Date(expires_at).getTime();
+  const nowMs = Date.now();
+  const diff = Math.floor((expMs - nowMs) / 1000);
+  return diff > 0 ? diff : 0;
+}
+
+/**
+ * Lê sessão facial pelo ID de linha (PK face_sessions.id)
+ */
+async function fetchFaceSessionById(faceSessionId: number) {
   const [rows] = await db.query(
     `
-      SELECT 
-        t.id            AS token_id,
-        t.status        AS token_status,
-        t.expires_at    AS expires_at,
-        pv.selfie_b64   AS selfie_b64
-      FROM wzb_tokens t
-      LEFT JOIN pending_validations pv
-        ON pv.token_id = t.id
-      WHERE t.id = ?
+      SELECT
+        fs.id                    AS face_session_id,
+        fs.session_sid           AS login_sid,
+        fs.user_id               AS user_id,
+        fs.status                AS face_status,
+        fs.expires_at            AS expires_at,
+        fs.used_at               AS used_at,
+        fs.created_at            AS created_at,
+        fs.w_code                AS w_code,
+        fs.internal_token        AS internal_token,
+        fsd.selfie_b64           AS selfie_b64
+      FROM face_sessions fs
+      LEFT JOIN face_session_data fsd
+        ON fsd.face_session_id = fs.id
+      WHERE fs.id = ?
       LIMIT 1
     `,
-    [sessionId]
+    [faceSessionId]
   );
 
   const row = (rows as any[])[0];
   if (!row) return null;
 
   return {
-    token_id: row.token_id,
-    status: row.token_status,
+    face_session_id: row.face_session_id,
+    login_sid: row.login_sid,
+    user_id: row.user_id,
+    status: row.face_status,
     expires_at: row.expires_at,
+    used_at: row.used_at,
+    created_at: row.created_at,
+    w_code: row.w_code,
+    internal_token: row.internal_token,
     selfie_b64: row.selfie_b64 || null,
   };
 }
 
 /**
- * helper padrão p/ NextResponse.json SEM cache
+ * Lê sessão facial atual usando o sid de login (session_sid UNIQUE)
+ * Se não tiver, retorna null.
+ */
+async function fetchFaceSessionByLoginSid(loginSid: string) {
+  const [rows] = await db.query(
+    `
+      SELECT
+        fs.id                    AS face_session_id,
+        fs.session_sid           AS login_sid,
+        fs.user_id               AS user_id,
+        fs.status                AS face_status,
+        fs.expires_at            AS expires_at,
+        fs.used_at               AS used_at,
+        fs.created_at            AS created_at,
+        fs.w_code                AS w_code,
+        fs.internal_token        AS internal_token,
+        fsd.selfie_b64           AS selfie_b64
+      FROM face_sessions fs
+      LEFT JOIN face_session_data fsd
+        ON fsd.face_session_id = fs.id
+      WHERE fs.session_sid = ?
+      LIMIT 1
+    `,
+    [loginSid]
+  );
+
+  const row = (rows as any[])[0];
+  if (!row) return null;
+
+  return {
+    face_session_id: row.face_session_id,
+    login_sid: row.login_sid,
+    user_id: row.user_id,
+    status: row.face_status,
+    expires_at: row.expires_at,
+    used_at: row.used_at,
+    created_at: row.created_at,
+    w_code: row.w_code,
+    internal_token: row.internal_token,
+    selfie_b64: row.selfie_b64 || null,
+  };
+}
+
+/**
+ * Helper padrão pra JSON SEM CACHE
  */
 function jsonNoStore(body: any, init?: { status?: number }) {
   return new NextResponse(JSON.stringify(body), {
@@ -181,58 +245,78 @@ function jsonNoStore(body: any, init?: { status?: number }) {
 /* =========================================================================
    POST /api/qrface
    Chamado pelo DASHBOARD logado.
-   Fluxo:
-   - pega user_id via cookie "wzb_lg"
-   - expira sessões antigas pendentes desse user
-   - tenta reutilizar uma sessão ativa (pending_face OU face_captured)
-   - se não existir, cria nova
-   - devolve:
-     {
-       success,
-       session,      // ticket curto pro celular
-       url,          // link https://.../qrface?session=...
-       selfie_b64,   // se já tem selfie salva
-       status        // 'pending_face' | 'face_captured'
-     }
+
+   O que faz:
+   - pega uid/sid do JWT que já está em wzb_lg
+   - tenta reaproveitar a sessão facial desse MESMO sid (UNIQUE)
+   - se está expirada e ainda não tem selfie -> "recicla" a mesma linha
+     (status volta pra pending_face, selfie reseta, renova expires_at)
+   - se já tem selfie (face_captured) mantém assim
+   - se não existir linha, cria agora
+
+   Retorna:
+   {
+     success: true,
+     session: "<ticket curto assinado>",
+     url: "https://wyzebank.com/qrface?session=...",
+     selfie_b64: "...ou null...",
+     status: "pending_face" | "face_captured" | ...,
+     expires_in_sec: 123
+   }
  ========================================================================= */
 export async function POST(req: NextRequest) {
   try {
-    const rawSession = getSessionCookie(req);
-    const userId = getUserIdFromSessionToken(rawSession);
-    if (!userId) {
+    const { uid, sid } = getSessionInfoFromCookie(req);
+
+    if (!uid || !sid) {
       return jsonNoStore(
         { error: "Usuário não autenticado." },
         { status: 401 }
       );
     }
 
-    // expira sessões 'pending_face' muito antigas
-    await expireStaleTokensForUser(userId);
+    // 1) tenta achar sessão facial pra esse sid (login atual)
+    let sess = await fetchFaceSessionByLoginSid(sid);
 
-    // tenta achar sessão ativa
-    const [activeRows] = await db.query(
-      `
-        SELECT
-          t.id            AS token_row_id,
-          t.status        AS token_status,
-          t.expires_at    AS expires_at,
-          pv.selfie_b64   AS selfie_b64
-        FROM wzb_tokens t
-        LEFT JOIN pending_validations pv
-          ON pv.token_id = t.id
-        WHERE t.user_id = ?
-          AND t.status IN ('pending_face','face_captured')
-        ORDER BY t.created_at DESC
-        LIMIT 1
-      `,
-      [userId]
-    );
+    // 2) Se já existe uma linha pra esse sid:
+    if (sess) {
+      const expired = isExpiredWithGrace(sess.expires_at);
 
-    const active = (activeRows as any[])[0];
+      // caso esteja expirada E AINDA está pendente (ninguém tirou selfie):
+      if (expired && sess.status === "pending_face") {
+        const newInternalToken = generateInternalToken();
+        const newWCode = generateWCode();
 
-    if (active) {
-      // gera ticket curto pro QR (é esse ticket que o celular manda de volta)
-      const sessionTicket = signFaceSessionTicket(active.token_row_id);
+        // "recicla" a MESMA linha em vez de criar outra
+        await db.query(
+          `
+            UPDATE face_sessions
+            SET internal_token = ?,
+                w_code = ?,
+                status = 'pending_face',
+                used_at = NULL,
+                expires_at = DATE_ADD(NOW(), INTERVAL ${TOKEN_LIFETIME_MIN} MINUTE)
+            WHERE id = ?
+          `,
+          [newInternalToken, newWCode, sess.face_session_id]
+        );
+
+        // zera selfie naquela mesma linha
+        await db.query(
+          `
+            UPDATE face_session_data
+            SET selfie_b64 = NULL,
+                updated_at = NOW()
+            WHERE face_session_id = ?
+          `,
+          [sess.face_session_id]
+        );
+
+        sess = await fetchFaceSessionById(sess.face_session_id);
+      }
+
+      // agora temos "sess" já consistente
+      const sessionTicket = signFaceSessionTicket(sess!.face_session_id);
 
       return jsonNoStore({
         success: true,
@@ -240,20 +324,22 @@ export async function POST(req: NextRequest) {
         url: `https://wyzebank.com/qrface?session=${encodeURIComponent(
           sessionTicket
         )}`,
-        selfie_b64: active.selfie_b64 || null,
-        status: active.token_status, // 'pending_face' ou 'face_captured'
+        selfie_b64: sess?.selfie_b64 || null,
+        status: sess?.status || "pending_face",
+        expires_in_sec: secondsUntilExpiry(sess?.expires_at),
       });
     }
 
-    // se não tem sessão ativa -> cria nova agora
+    // 3) Não existe linha ainda pra esse sid → cria do zero
     const internalToken = generateInternalToken();
     const wCode = generateWCode();
 
     const insertRes: any = await db.query(
       `
-        INSERT INTO wzb_tokens (
-          token,
+        INSERT INTO face_sessions (
+          session_sid,
           user_id,
+          internal_token,
           w_code,
           status,
           created_at,
@@ -261,39 +347,39 @@ export async function POST(req: NextRequest) {
           expires_at
         )
         VALUES (
-          ?,               -- token interno randômico
-          ?,               -- user_id
-          ?,               -- w_code humano
-          'pending_face',  -- status inicial
+          ?,          -- sid do login (único)
+          ?,          -- user_id dono
+          ?,          -- token interno
+          ?,          -- código humano curto
+          'pending_face',
           NOW(),
           NULL,
           DATE_ADD(NOW(), INTERVAL ${TOKEN_LIFETIME_MIN} MINUTE)
         )
       `,
-      [internalToken, userId, wCode]
+      [sid, uid, internalToken, wCode]
     );
 
     const insertedInfo = Array.isArray(insertRes) ? insertRes[0] : insertRes;
-    const newTokenRowId = insertedInfo.insertId as number;
+    const newFaceSessionId = insertedInfo.insertId as number;
 
-    // cria pending_validations vazia linkada
+    // cria face_session_data correspondente, ainda sem selfie
     await db.query(
       `
-        INSERT INTO pending_validations (
-          token_id,
-          qr_token,
-          w_code,
+        INSERT INTO face_session_data (
+          face_session_id,
           selfie_b64,
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, NULL, NOW(), NOW())
+        VALUES (?, NULL, NOW(), NOW())
       `,
-      [newTokenRowId, internalToken, wCode]
+      [newFaceSessionId]
     );
 
-    // ticket curto assinado que vai pro QR
-    const sessionTicket = signFaceSessionTicket(newTokenRowId);
+    // pega sessão montada
+    const freshSess = await fetchFaceSessionById(newFaceSessionId);
+    const sessionTicket = signFaceSessionTicket(newFaceSessionId);
 
     return jsonNoStore({
       success: true,
@@ -303,6 +389,7 @@ export async function POST(req: NextRequest) {
       )}`,
       selfie_b64: null,
       status: "pending_face",
+      expires_in_sec: secondsUntilExpiry(freshSess?.expires_at),
     });
   } catch (err: any) {
     console.error("[QRFACE POST ERROR]", err);
@@ -315,16 +402,25 @@ export async function POST(req: NextRequest) {
 
 /* =========================================================================
    PUT /api/qrface
-   Chamado PELO CELULAR depois da captura.
-   Body: { session: string, selfieDataUrl: string }
+   Chamado PELO CELULAR depois que a pessoa tirou a foto.
+
+   Body esperado:
+   {
+     session: "<ticket curto recebido no QR>",
+     selfieDataUrl: "data:image/jpeg;base64,..."
+   }
+
    Fluxo:
-   - valida ticket -> sid
-   - busca sessão no banco
-   - se já expirou e ainda estava pending_face -> recusa
-   - se status != pending_face -> recusa
-   - salva selfie em pending_validations.selfie_b64
-   - atualiza wzb_tokens.status='face_captured'
-   - responde já com selfiePreview e status "face_captured"
+   - decodifica ticket curto -> face_session_id
+   - busca linha face_sessions
+   - se expirou e ainda era pending_face, marca como 'expired' e recusa
+   - se status !== 'pending_face', recusa (já usada / bloqueada)
+   - salva selfie em face_session_data.selfie_b64
+   - atualiza face_sessions.status='face_captured', used_at=NOW()
+   - retorna preview
+
+   Esse PUT é justamente o gatilho que faz o dashboard parar
+   de mostrar o QR e passar a mostrar a selfie (via polling que você já faz).
  ========================================================================= */
 export async function PUT(req: NextRequest) {
   try {
@@ -352,7 +448,7 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    let sess = await fetchSessionRowById(decoded.sid);
+    let sess = await fetchFaceSessionById(decoded.sid);
     if (!sess) {
       return jsonNoStore(
         { error: "Sessão não encontrada." },
@@ -360,18 +456,17 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // checa expiração real
     const expired = isExpiredWithGrace(sess.expires_at);
 
+    // expirou e ainda não tinha sido usada?
     if (expired && sess.status === "pending_face") {
-      // se expirou antes da captura -> marca como expired e recusa
       await db.query(
         `
-          UPDATE wzb_tokens
+          UPDATE face_sessions
           SET status = 'expired'
           WHERE id = ?
         `,
-        [sess.token_id]
+        [sess.face_session_id]
       );
 
       return jsonNoStore(
@@ -380,6 +475,7 @@ export async function PUT(req: NextRequest) {
       );
     }
 
+    // se já não está mais pending_face, não deixa sobrescrever
     if (sess.status !== "pending_face") {
       return jsonNoStore(
         { error: "Sessão já utilizada / bloqueada." },
@@ -387,35 +483,35 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // salva a imagem no banco
+    // salva selfie e marca como capturada
     await db.query(
       `
-        UPDATE pending_validations
+        UPDATE face_session_data
         SET selfie_b64 = ?, updated_at = NOW()
-        WHERE token_id = ?
+        WHERE face_session_id = ?
       `,
-      [selfieDataUrl, sess.token_id]
+      [selfieDataUrl, sess.face_session_id]
     );
 
-    // atualiza a sessão pra face_captured
     await db.query(
       `
-        UPDATE wzb_tokens
+        UPDATE face_sessions
         SET status = 'face_captured',
             used_at = NOW()
         WHERE id = ?
       `,
-      [sess.token_id]
+      [sess.face_session_id]
     );
 
-    // pega o estado atualizado pra retornar consistente
-    sess = await fetchSessionRowById(sess.token_id);
+    // refetch pra devolver payload consistente
+    sess = await fetchFaceSessionById(sess.face_session_id);
 
     return jsonNoStore({
       success: true,
       message: "Selfie recebida com sucesso.",
       status: "face_captured",
       selfiePreview: sess?.selfie_b64 || selfieDataUrl,
+      expires_in_sec: secondsUntilExpiry(sess?.expires_at),
     });
   } catch (err: any) {
     console.error("[QRFACE PUT ERROR]", err);
@@ -428,27 +524,30 @@ export async function PUT(req: NextRequest) {
 
 /* =========================================================================
    GET /api/qrface?session=...
-   Usado pelo DASHBOARD (polling) e pelo CELULAR pra validar no começo.
+   Usado de dois jeitos:
+   - DASHBOARD (polling a cada ~2.5s) pra ver se a selfie chegou
+   - CELULAR (logo ao abrir o link do QR) pra validar se ainda tá viva
+
    Fluxo:
-   - decodifica ticket -> sid
-   - lê sessão no banco
-   - se expirou e ainda tá pending_face => reporta "expired"
-   - senão reporta status real (pending_face | face_captured | expired ...)
-   - SEM CACHE
+   - decodifica ticket curto -> face_session_id
+   - busca linha
+   - se expirou e status ainda era pending_face => "expired"
+   - devolve status e selfie_b64 (se já tem)
+   - devolve expires_in_sec também
  ========================================================================= */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const sessionTicket = searchParams.get("session");
+    const ticketFromUrl = searchParams.get("session");
 
-    if (!sessionTicket) {
+    if (!ticketFromUrl) {
       return jsonNoStore(
         { error: "session é obrigatório." },
         { status: 400 }
       );
     }
 
-    const decoded = verifyFaceSessionTicket(sessionTicket);
+    const decoded = verifyFaceSessionTicket(ticketFromUrl);
     if (!decoded) {
       return jsonNoStore(
         { error: "Sessão inválida ou expirada." },
@@ -456,7 +555,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const sess = await fetchSessionRowById(decoded.sid);
+    const sess = await fetchFaceSessionById(decoded.sid);
     if (!sess) {
       return jsonNoStore(
         { error: "Sessão não encontrada." },
@@ -466,7 +565,7 @@ export async function GET(req: NextRequest) {
 
     const expiredNow = isExpiredWithGrace(sess.expires_at);
 
-    // "expired" só é forçado se ainda estava pendente e passou do tempo
+    // se já passou o tempo e ainda tava pendente => "expired"
     const effectiveStatus =
       expiredNow && sess.status === "pending_face"
         ? "expired"
@@ -474,8 +573,9 @@ export async function GET(req: NextRequest) {
 
     return jsonNoStore({
       success: true,
-      status: effectiveStatus, // pending_face | face_captured | expired | etc.
+      status: effectiveStatus,           // pending_face | face_captured | expired | ...
       selfie_b64: sess.selfie_b64 || null,
+      expires_in_sec: secondsUntilExpiry(sess.expires_at),
     });
   } catch (err: any) {
     console.error("[QRFACE GET ERROR]", err);
