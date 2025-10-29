@@ -322,31 +322,31 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const expired = isExpiredWithGrace(sess.expires_at);
+    // const expired = isExpiredWithGrace(sess.expires_at);
 
-    if (expired && sess.status === "pending_face") {
-      // marca como expired
-      await db.query(
-        `
-          UPDATE wzb_tokens
-          SET status = 'expired'
-          WHERE id = ?
-        `,
-        [sess.token_id]
-      );
+    // if (expired && sess.status === "pending_face") {
+    //   // marca como expired
+    //   await db.query(
+    //     `
+    //       UPDATE wzb_tokens
+    //       SET status = 'expired'
+    //       WHERE id = ?
+    //     `,
+    //     [sess.token_id]
+    //   );
 
-      return NextResponse.json(
-        { error: "Sessão expirada, gere outro QR." },
-        { status: 400 }
-      );
-    }
+    //   return NextResponse.json(
+    //     { error: "Sessão expirada, gere outro QR." },
+    //     { status: 400 }
+    //   );
+    // }
 
-    if (sess.status !== "pending_face") {
-      return NextResponse.json(
-        { error: "Sessão já utilizada / bloqueada." },
-        { status: 400 }
-      );
-    }
+    // if (sess.status !== "pending_face") {
+    //   return NextResponse.json(
+    //     { error: "Sessão já utilizada / bloqueada." },
+    //     { status: 400 }
+    //   );
+    // }
 
     // salva selfie
     await db.query(
