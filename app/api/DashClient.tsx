@@ -7,18 +7,28 @@ import { DataTable } from "@/components/data-table";
 import { SectionCards } from "@/components/section-cards";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { VerifyDocumentsSection } from "@/components/alert-pending"; // 👈 trocou aqui
+import { VerifyDocumentsSection } from "@/components/alert-pending";
 import data from "../dash/data.json";
 import { useAuth } from "../hooks/useAuth";
 
 interface DashClientProps {
   userName: string;
   userEmail: string;
+  userCpfOrCnpj: string;
+  userPhone: string;
+  degraded?: boolean;
 }
 
-export default function DashClient({ userName, userEmail }: DashClientProps) {
+export default function DashClient({
+  userName,
+  userEmail,
+  userCpfOrCnpj,
+  userPhone,
+  degraded,
+}: DashClientProps) {
   useAuth();
 
+  // corta nome pra não quebrar sidebar
   const displayName =
     userName.length > 25 ? userName.slice(0, 25) + "..." : userName;
 
@@ -36,23 +46,42 @@ export default function DashClient({ userName, userEmail }: DashClientProps) {
         userName={displayName}
         userEmail={userEmail}
       />
+
       <SidebarInset>
         <SiteHeader />
+
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 max-w-[90rem] lg:mx-auto lg:w-full lg:px-0">
+
+              {/* aviso de degradação opcional */}
+              {degraded && (
+                <div className="mx-4 lg:mx-6 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-[12px] leading-relaxed text-yellow-200">
+                  Alguns dados podem estar temporariamente indisponíveis.
+                </div>
+              )}
+
               {/* ALERTA + DRAWER CONTROLADO */}
               <div className="px-4 lg:px-6">
-                <VerifyDocumentsSection />
+                <VerifyDocumentsSection
+                  user={{
+                    name: userName,
+                    email: userEmail,
+                    cpfOrCnpj: userCpfOrCnpj,
+                    phone: userPhone,
+                  }}
+                />
               </div>
 
-              {/* RESTO DO DASH */}
+              {/* CARDS principais do dashboard */}
               <SectionCards />
 
+              {/* gráfico */}
               <div className="px-4 lg:px-6">
                 <ChartAreaInteractive />
               </div>
 
+              {/* tabela (ex: atividades recentes) */}
               <DataTable data={data} />
             </div>
           </div>

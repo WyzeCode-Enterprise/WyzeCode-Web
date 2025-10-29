@@ -7,15 +7,26 @@ import { LoginForm } from "@/components/login-form";
 export default function LoginPage() {
   const router = useRouter();
 
-  // booting: true = ainda tentando autologin silencioso
-  // showForm: true = deve renderizar o formulário
+  // booting: true => estamos tentando reaproveitar sessão existente
+  // showForm: true => deve mostrar o formulário de login
   const [booting, setBooting] = useState(true);
   const [showForm, setShowForm] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
+    // helper pra cair no modo "mostrar formulário"
+    function fallbackToForm() {
+      if (cancelled) return;
+      setShowForm(true);
+      setBooting(false);
+    }
+
     async function tryAutoLogin() {
+      // safety timeout pra não travar a tela se a API nunca responde
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+
       try {
         const res = await fetch("/api/login", {
           method: "POST",
@@ -28,28 +39,39 @@ export default function LoginPage() {
             next: null,
           }),
           credentials: "include",
+          signal: controller.signal,
         });
 
-        const data = await res.json().catch(() => ({}));
+        // tenta parsear json; se falhar, cai pro formulário
+        let data: any = {};
+        try {
+          data = await res.json();
+        } catch {
+          // resposta não era json -> não tem sessão válida
+          return fallbackToForm();
+        }
 
-        // sessão já válida → manda direto pro redirect
-        if (res.ok && data?.success && data?.redirect && data?.reusedSession) {
+        // caso feliz: backend disse "já tinha sessão e eu só reaproveitei"
+        if (
+          res.ok &&
+          data?.success === true &&
+          data?.reusedSession === true &&
+          typeof data?.redirect === "string" &&
+          data.redirect.length > 0
+        ) {
           if (!cancelled) {
             router.push(data.redirect);
           }
           return;
         }
 
-        // precisa logar normalmente
-        if (!cancelled) {
-          setShowForm(true);
-          setBooting(false);
-        }
-      } catch {
-        if (!cancelled) {
-          setShowForm(true);
-          setBooting(false);
-        }
+        // qualquer outra coisa -> precisa logar manualmente
+        fallbackToForm();
+      } catch (err) {
+        // abort, erro de rede, 500 etc -> mostra form
+        fallbackToForm();
+      } finally {
+        clearTimeout(timeout);
       }
     }
 
@@ -63,15 +85,14 @@ export default function LoginPage() {
   return (
     <div
       className="
-        relative            /* <- âncora pros absolutes */
-        overflow-hidden     /* <- corta o glow que sai pra fora da viewport */
+        relative
+        overflow-hidden
         bg-background text-foreground
         flex min-h-screen flex-col items-center justify-center
         gap-6 p-6 md:p-10
       "
     >
-      {/* ===== SUPER GLOW IA NO TOPO ===== */}
-      {/* faixa de luz gigante descendo do topo (aurora) */}
+      {/* Glow grande no topo */}
       <div
         className="
           pointer-events-none
@@ -89,7 +110,7 @@ export default function LoginPage() {
         aria-hidden="true"
       />
 
-      {/* gradiente vertical suave reforçando a luz no topo */}
+      {/* Gradiente vertical */}
       <div
         className="
           pointer-events-none
@@ -106,8 +127,8 @@ export default function LoginPage() {
 
       <div className="w-full max-w-[450px]">
         {booting && !showForm ? (
-          <div className="text-sm text-muted-foreground text-center">
-            Aguarde estamos validando seu login...
+          <div className="text-center text-sm text-muted-foreground">
+            Aguarde, estamos validando sua sessão...
           </div>
         ) : (
           <LoginForm />

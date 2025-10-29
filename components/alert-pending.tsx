@@ -50,8 +50,8 @@ function useIsMobile() {
    - converte File -> base64
    - salva / carrega / remove localStorage
 -------------------------------------------------- */
-const FRONT_KEY = "kyc_doc_front";
-const BACK_KEY = "kyc_doc_back";
+const FRONT_KEY = "wzb_dcmp_mf";
+const BACK_KEY = "wzb_dcmp_mb";
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -68,7 +68,10 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
-function saveImagesToLocalStorage(frontB64: string | null, backB64: string | null) {
+function saveImagesToLocalStorage(
+  frontB64: string | null,
+  backB64: string | null
+) {
   if (typeof window === "undefined") return;
   try {
     if (frontB64) {
@@ -267,8 +270,7 @@ function UploadModal({
     // BACKDROP
     <div
       className={cn(
-        "fixed inset-0 z-[9999999] flex items-center justify-center p-5",
-        "bg-black/70"
+        "fixed inset-0 z-[9999999] flex items-center justify-center p-5 bg-black/70"
       )}
       // clicar fora fecha modal
       onMouseDown={onClose}
@@ -306,7 +308,7 @@ function UploadModal({
             )}
           >
             {frontPreview ? (
-              <div className="relative h-[140px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
+              <div className="relative h-[200px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
                 <Image
                   src={frontPreview}
                   alt="Frente documento"
@@ -394,7 +396,7 @@ function UploadModal({
         <div className="flex flex-col gap-2 pt-2">
           <Button
             className={cn(
-              "w-full cursor-pointer rounded-md bg-[#26FF59]/90 py-5.5 text-[15px] font-semibold text-black hover:bg-[#26FF59]",
+              "w-full cursor-pointer rounded-md bg-[#26FF59]/90 py-[1.375rem] text-[15px] font-semibold text-black hover:bg-[#26FF59]",
               !canConfirm && "pointer-events-none cursor-not-allowed opacity-30"
             )}
             onClick={handleConfirmClick}
@@ -405,7 +407,7 @@ function UploadModal({
 
           <Button
             variant="outline"
-            className="w-full cursor-pointer py-5.5 text-[15px] font-semibold bg-[#0A0A0A]"
+            className="w-full cursor-pointer py-[1.375rem] text-[15px] font-semibold bg-[#0A0A0A]"
             onClick={onClose}
           >
             Cancelar
@@ -421,7 +423,7 @@ function UploadModal({
    - inputs readonly
    - layout 2x2 (Nome/CPF | Email/Telefone)
    - persistência localStorage
-   - botão ✕ pra remover frente/verso
+   - botões de remover frente/verso SEM nested button
    - impede drawer fechar enquanto modal está aberto
 -------------------------------------------------- */
 function VerifyDocumentsDrawer({
@@ -431,11 +433,16 @@ function VerifyDocumentsDrawer({
 }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
-  user?: { name?: string; cpf?: string; email?: string; phone?: string };
+  user?: {
+    name: string;
+    email: string;
+    cpfOrCnpj: string;
+    phone: string;
+  };
 }) {
   const isMobile = useIsMobile();
 
-  // imagens confirmadas base64 (estado atual do drawer)
+  // imagens confirmadas base64
   const [frontConfirmed, setFrontConfirmed] = React.useState<string | null>(
     null
   );
@@ -444,7 +451,7 @@ function VerifyDocumentsDrawer({
   // modal aberto?
   const [uploadModalOpen, setUploadModalOpen] = React.useState(false);
 
-  // carregar do localStorage quando o drawer abre
+  // carregar do localStorage quando o drawer abrir
   React.useEffect(() => {
     if (!open) return;
     const { front, back } = loadImagesFromLocalStorage();
@@ -452,33 +459,32 @@ function VerifyDocumentsDrawer({
     if (back) setBackConfirmed(back);
   }, [open]);
 
-  // abre modal
-  function handleOpenUploadModal() {
-    setUploadModalOpen(true);
-  }
-
-  // fecha modal
-  function handleCloseUploadModal() {
-    setUploadModalOpen(false);
-  }
-
-  // quando confirma dentro do modal
+  // confirmar imagens enviadas no modal
   function handleConfirmUpload(
     finalFrontB64: string | null,
     finalBackB64: string | null
   ) {
-    setFrontConfirmed(finalFrontB64 || null);
-    setBackConfirmed(finalBackB64 || null);
+    setFrontConfirmed(finalFrontB64);
+    setBackConfirmed(finalBackB64);
 
-    // persiste no localStorage
-    saveImagesToLocalStorage(finalFrontB64 || null, finalBackB64 || null);
+    saveImagesToLocalStorage(finalFrontB64, finalBackB64);
 
+    setUploadModalOpen(false);
+  }
+
+  // abrir modal
+  function handleOpenUploadModal() {
+    setUploadModalOpen(true);
+  }
+
+  // fechar modal
+  function handleCloseUploadModal() {
     setUploadModalOpen(false);
   }
 
   // remover frente
   function handleRemoveFront(e: React.MouseEvent) {
-    e.stopPropagation(); // não reabrir modal
+    e.stopPropagation(); // não tentar reabrir modal
     setFrontConfirmed(null);
     removeFrontFromLocalStorage();
   }
@@ -490,27 +496,28 @@ function VerifyDocumentsDrawer({
     removeBackFromLocalStorage();
   }
 
+  // enviar documento final
   function handleSubmitDocument() {
-    // aqui você pode futuramente fazer um POST para /pending-v
     console.log("Enviar documento:", {
       frontConfirmed,
       backConfirmed,
     });
+    // depois você faz fetch("/api/pending-v", { ... })
   }
 
-  // impedir drawer fechar com modal aberto
+  // impedir drawer fechar se o modal interno está aberto
   function handleDrawerOpenChange(next: boolean) {
     if (!next && uploadModalOpen) {
-      // tentativa de fechar enquanto modal aberto -> ignora
       return;
     }
     onOpenChange(next);
   }
 
-  const name = user?.name ?? " ";
-  const cpf = user?.cpf ?? " ";
-  const email = user?.email ?? " ";
-  const phone = user?.phone ?? " ";
+  // dados do usuário vindos do servidor
+  const name = user?.name || "Usuário";
+  const cpfOrCnpj = user?.cpfOrCnpj || "—";
+  const email = user?.email || "indisponível@wyze";
+  const phone = user?.phone || "—";
 
   return (
     <>
@@ -523,7 +530,6 @@ function VerifyDocumentsDrawer({
         initialBackB64={backConfirmed}
       />
 
-      {/* Drawer principal */}
       <Drawer
         open={open}
         onOpenChange={handleDrawerOpenChange}
@@ -532,13 +538,9 @@ function VerifyDocumentsDrawer({
         <DrawerContent
           className={cn(
             "group/drawer-content bg-background fixed z-50 flex h-auto flex-col",
-            // top
             "data-[vaul-drawer-direction=top]:inset-x-0 data-[vaul-drawer-direction=top]:top-0 data-[vaul-drawer-direction=top]:mb-24 data-[vaul-drawer-direction=top]:max-h-[80vh] data-[vaul-drawer-direction=top]:rounded-b-lg data-[vaul-drawer-direction=top]:border-b",
-            // bottom
             "data-[vaul-drawer-direction=bottom]:inset-x-0 data-[vaul-drawer-direction=bottom]:bottom-0 data-[vaul-drawer-direction=bottom]:mt-24 data-[vaul-drawer-direction=bottom]:max-h-[80vh] data-[vaul-drawer-direction=bottom]:rounded-t-lg data-[vaul-drawer-direction=bottom]:border-t",
-            // right
             "data-[vaul-drawer-direction=right]:inset-y-0 data-[vaul-drawer-direction=right]:right-0 data-[vaul-drawer-direction=right]:w-[90vw] data-[vaul-drawer-direction=right]:border-l data-[vaul-drawer-direction=right]:sm:max-w-md data-[vaul-drawer-direction=right]:lg:max-w-lg",
-            // left
             "data-[vaul-drawer-direction=left]:inset-y-0 data-[vaul-drawer-direction=left]:left-0 data-[vaul-drawer-direction=left]:w-[90vw] data-[vaul-drawer-direction=left]:border-r data-[vaul-drawer-direction=left]:sm:max-w-md data-[vaul-drawer-direction=left]:lg:max-w-lg"
           )}
         >
@@ -557,9 +559,9 @@ function VerifyDocumentsDrawer({
           </DrawerHeader>
 
           <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-4 text-sm sm:px-6">
-            {/* DADOS PESSOAIS EM 2x2 COM INPUT READONLY */}
+            {/* DADOS PESSOAIS (2x2) */}
             <div className="grid gap-4 text-[13px] leading-relaxed">
-              {/* linha 1: Nome / CPF */}
+              {/* linha 1: Nome / CPF ou CNPJ */}
               <div className="grid grid-cols-2 gap-4">
                 {/* Nome */}
                 <div className="flex flex-col gap-2">
@@ -569,19 +571,19 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={name}
-                    className="w-full break-all rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
+                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none"
                   />
                 </div>
 
-                {/* CPF */}
+                {/* CPF/CNPJ */}
                 <div className="flex flex-col gap-2">
                   <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    CPF
+                    CPF / CNPJ
                   </label>
                   <input
                     readOnly
-                    value={cpf}
-                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
+                    value={cpfOrCnpj}
+                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none"
                   />
                 </div>
               </div>
@@ -596,7 +598,7 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={email}
-                    className="w-full break-all rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
+                    className="w-full break-all rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none"
                   />
                 </div>
 
@@ -608,7 +610,7 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={phone}
-                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
+                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none"
                   />
                 </div>
               </div>
@@ -618,20 +620,28 @@ function VerifyDocumentsDrawer({
 
             {/* DOCUMENTO ENVIADO */}
             <div className="grid gap-2">
-              <div className="text-[17px] font-medium text-foreground">
+              <div className="text-[13px] font-medium text-foreground">
                 Documento enviado
               </div>
 
-              <div className="text-[14px] leading-snug text-muted-foreground">
+              <div className="text-[12px] leading-snug text-muted-foreground">
                 Essas são as imagens que você confirmou. Se algo estiver errado,
                 você pode reenviar.
               </div>
 
-              <button
-                type="button"
+              {/* cartão clicável, mas NÃO é <button> pra evitar nested button */}
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={handleOpenUploadModal}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleOpenUploadModal();
+                  }
+                }}
                 className={cn(
-                  "group relative w-full cursor-pointer rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-4 text-left transition-colors hover:border-neutral-500/80 hover:bg-neutral-900/40"
+                  "group relative w-full cursor-pointer rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-4 text-left transition-colors hover:border-neutral-500/80 hover:bg-neutral-900/40 outline-none focus:ring-2 focus:ring-neutral-600/50"
                 )}
               >
                 {frontConfirmed || backConfirmed ? (
@@ -649,8 +659,7 @@ function VerifyDocumentsDrawer({
                           <button
                             type="button"
                             onClick={handleRemoveFront}
-                            className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90 cursor-pointer"
-                            aria-label="Remover frente"
+                            className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
                           >
                             ✕
                           </button>
@@ -678,8 +687,7 @@ function VerifyDocumentsDrawer({
                           <button
                             type="button"
                             onClick={handleRemoveBack}
-                            className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90 cursor-pointer"
-                            aria-label="Remover verso"
+                            className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-[11px] font-semibold text-white hover:bg-black/90"
                           >
                             ✕
                           </button>
@@ -709,9 +717,9 @@ function VerifyDocumentsDrawer({
                     </div>
                   </div>
                 )}
-              </button>
+              </div>
 
-              <div className="text-[14px] leading-relaxed text-muted-foreground">
+              <div className="text-[11px] leading-relaxed text-muted-foreground">
                 • Documento precisa estar visível e legível.
                 <br />
                 • Não utilize filtro ou edição pesada.
@@ -722,13 +730,13 @@ function VerifyDocumentsDrawer({
 
             {/* aviso legal */}
             <div className="rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3">
-              <p className="text-[14px] font-medium leading-relaxed text-yellow-400">
+              <p className="text-[12px] font-medium leading-relaxed text-yellow-400">
                 Importante
               </p>
-              <p className="text-[13px] leading-relaxed text-yellow-200/80">
+              <p className="text-[12px] leading-relaxed text-yellow-200/80">
                 Seu documento é usado apenas para validação da conta e
-                prevenção a fraude. Seus dados são criptografados e nunca
-                ficam públicos.
+                prevenção a fraude. Seus dados são criptografados e nunca ficam
+                públicos.
               </p>
             </div>
           </div>
@@ -737,7 +745,7 @@ function VerifyDocumentsDrawer({
             <Button
               size="sm"
               className={cn(
-                "w-full cursor-pointer rounded-md bg-[#26FF59]/90 py-5 text-[15px] font-semibold text-black hover:bg-[#26FF59]",
+                "w-full cursor-pointer rounded-md bg-[#26FF59]/90 py-5 text-[14px] font-semibold text-black hover:bg-[#26FF59]",
                 !(frontConfirmed && backConfirmed) &&
                   "pointer-events-none cursor-not-allowed opacity-30"
               )}
@@ -751,7 +759,7 @@ function VerifyDocumentsDrawer({
               <Button
                 size="sm"
                 variant="outline"
-                className="w-full cursor-pointer rounded-md py-5 text-[15px] font-semibold bg-[#0A0A0A]"
+                className="w-full cursor-pointer rounded-md py-5 text-[14px] font-semibold"
               >
                 Cancelar
               </Button>
@@ -767,7 +775,16 @@ function VerifyDocumentsDrawer({
    Wrapper que controla open/close
    => usar no /dash
 -------------------------------------------------- */
-export function VerifyDocumentsSection() {
+export function VerifyDocumentsSection({
+  user,
+}: {
+  user: {
+    name: string;
+    email: string;
+    cpfOrCnpj: string;
+    phone: string;
+  };
+}) {
   const [open, setOpen] = React.useState(false);
 
   return (
@@ -778,10 +795,10 @@ export function VerifyDocumentsSection() {
         open={open}
         onOpenChange={setOpen}
         user={{
-          name: "Usuário Wyze",
-          cpf: "123.456.789-00",
-          email: "usuario@example.com",
-          phone: "+55 (11) 90000-0000",
+          name: user.name,
+          email: user.email,
+          cpfOrCnpj: user.cpfOrCnpj,
+          phone: user.phone,
         }}
       />
     </>

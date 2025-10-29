@@ -5,6 +5,7 @@ import { randomInt, createHash } from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "../db";
 import dotenv from "dotenv";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -57,6 +58,33 @@ async function ensureMailerReady() {
     // não damos throw aqui porque alguns servidores SMTP não suportam VRFY
     // mas se falhar no sendMail depois a gente trata
   }
+}
+
+// ========= CRYPTO HELPERS PARA CPF/CNPJ =========
+
+// Deriva chave AES-256 a partir do JWT_SECRET
+function getAesKeyFromSecret() {
+  const secret = process.env.JWT_SECRET || "supersecretkey";
+  return crypto.createHash("sha256").update(secret).digest(); // 32 bytes
+}
+
+// Criptografa doc puro -> "ivBase64:cipherBase64:tagBase64"
+function encryptCpfCnpjAES(plainDoc: string): string {
+  const key = getAesKeyFromSecret();
+  const iv = crypto.randomBytes(12); // recomendado p/ GCM (96 bits)
+
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([
+    cipher.update(plainDoc, "utf8"),
+    cipher.final(),
+  ]);
+  const authTag = cipher.getAuthTag();
+
+  return [
+    iv.toString("base64"),
+    encrypted.toString("base64"),
+    authTag.toString("base64"),
+  ].join(":");
 }
 
 // ========= OUTROS HELPERS =========
@@ -385,7 +413,7 @@ export async function POST(req: NextRequest) {
 
     // ========== FASE 1: gerar e mandar o email ==========
     if (!otpUser) {
-      // gera otp e pré-hasha as infos p/ salvar na otp_codes
+      // gera otp e pré-salva infos em otp_codes
       const otp = generateOTP();
       const expireAt = new Date(Date.now() + 10 * 60 * 1000); // 10min
       const normalizedPhone = normalizePhone(telefone);
@@ -395,37 +423,58 @@ export async function POST(req: NextRequest) {
       const hashedCpfCnpj = await bcrypt.hash(onlyDigits, 10);
       const fingerprint = cpfCnpjFingerprint(onlyDigits);
 
-      // upsert otp_codes
       if (lastOtp && lastOtp.status === "pending") {
+        // UPDATE otp_codes existente
         await db.query(
           `UPDATE otp_codes
-            SET otp=?, expires_at=?, nome=?, telefone=?, cpf_cnpj=?, cpf_cnpj_fingerprint=?, password_hash=?, ip=?, user_agent=?
+            SET otp=?,
+                expires_at=?,
+                nome=?,
+                telefone=?,
+                cpf_cnpj=?,
+                cpf_cnpj_fingerprint=?,
+                password_hash=?,
+                ip=?,
+                user_agent=?
           WHERE id=?`,
           [
             otp,
             expireAt,
             nome,
             normalizedPhone,
-            hashedCpfCnpj,
-            fingerprint,
-            hashedPassword,
+            hashedCpfCnpj,          // bcrypt
+            fingerprint,            // sha256 pepper
+            hashedPassword,         // bcrypt senha
+            onlyDigits,             // CPF/CNPJ puro (só dígitos)
             ip,
             userAgent,
             lastOtp.id,
           ]
         );
       } else {
+        // INSERT novo otp_codes
         await db.query(
           `INSERT INTO otp_codes
-            (email, nome, telefone, cpf_cnpj, cpf_cnpj_fingerprint, password_hash, otp, expires_at, status, ip, user_agent)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+            (email,
+             nome,
+             telefone,
+             cpf_cnpj,
+             cpf_cnpj_fingerprint,
+             password_hash,
+             otp,
+             expires_at,
+             status,
+             ip,
+             user_agent)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
           [
             email,
             nome,
             normalizedPhone,
-            hashedCpfCnpj,
-            fingerprint,
-            hashedPassword,
+            hashedCpfCnpj,      // bcrypt
+            fingerprint,        // sha256 pepper
+            hashedPassword,     // bcrypt senha
+            onlyDigits,         // CPF/CNPJ puro
             otp,
             expireAt,
             ip,
@@ -470,7 +519,7 @@ export async function POST(req: NextRequest) {
               "Não foi possível enviar o código de verificação agora. Tente novamente em instantes.",
             code: "FALHA_EMAIL",
           },
-          { status: 502 } // 502 = bad gateway / upstream
+          { status: 502 }
         );
       }
 
@@ -540,6 +589,24 @@ export async function POST(req: NextRequest) {
 
     // cria user final
     try {
+      // documento puro que salvamos na fase 1 (onlyDigits)
+      const originalDigits =
+        lastOtp.plain_doc_digits &&
+        String(lastOtp.plain_doc_digits).replace(/\D/g, "");
+
+      if (!originalDigits) {
+        return NextResponse.json(
+          {
+            error:
+              "Não foi possível finalizar o cadastro. Gere um novo código de verificação.",
+          },
+          { status: 400 }
+        );
+      }
+
+      // criptografa esse doc com AES-256-GCM usando JWT_SECRET
+      const encryptedDoc = encryptCpfCnpjAES(originalDigits);
+
       await db.query(
         `INSERT INTO users (
           email,
@@ -557,7 +624,7 @@ export async function POST(req: NextRequest) {
           lastOtp.password_hash,
           lastOtp.nome,
           normalizePhone(lastOtp.telefone),
-          lastOtp.cpf_cnpj,
+          encryptedDoc, // <<----- agora é cifrado AES, não bcrypt
           lastOtp.cpf_cnpj_fingerprint,
         ]
       );
