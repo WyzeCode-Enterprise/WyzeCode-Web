@@ -10,7 +10,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
 
 /** Limites (bytes) para evitar max_allowed_packet e abusos */
 const PER_FILE_LIMIT = 6 * 1024 * 1024;      // 6 MB por arquivo (real aproximado)
-const COMBINED_LIMIT  = 14 * 1024 * 1024;    // 14 MB total (frente+verso+selfie)
+const COMBINED_LIMIT = 14 * 1024 * 1024;     // 14 MB total (frente+verso+selfie)
 
 /** ===================== Helpers base ===================== */
 function getSessionCookie(req: NextRequest): string | null {
@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
 
     // MIME permitido
     if (!isAllowedMime(front_b64, true) || !isAllowedMime(back_b64, true) || !isAllowedMime(selfie_b64, false)) {
-      return json({ error: "Formato inválido. Use image/* (selfie) e image/* ou PDF (frente/verso)." }, 400);
+      return json({ error: "Formato inválido. Use image/* (selfie) e image/* ou PDF (frente/verso)." }, 415);
     }
 
     // Tamanho real aproximado
@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
     const selfieBytes = approxBinaryBytesFromDataURL(selfie_b64);
 
     if (frontBytes === 0 || backBytes === 0 || selfieBytes === 0) {
-      return json({ error: "Arquivos inválidos (data URL malformado)." }, 400);
+      return json({ error: "Arquivos inválidos (data URL malformado)." }, 422);
     }
 
     // Limites

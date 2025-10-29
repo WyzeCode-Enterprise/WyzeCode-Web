@@ -5,11 +5,6 @@ import { cn } from "@/lib/utils";
 import {
   Drawer,
   DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerClose,
 } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -20,6 +15,7 @@ import { Separator } from "@/components/ui/separator";
 function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState(false);
   React.useEffect(() => {
+    if (typeof window === "undefined") return;
     const mq = window.matchMedia("(max-width: 640px)");
     const handler = (e: MediaQueryListEvent | MediaQueryList) => {
       const matches = (e as MediaQueryList).matches ?? (e as any).matches ?? false;
@@ -30,8 +26,10 @@ function useIsMobile() {
       mq.addEventListener("change", handler);
       return () => mq.removeEventListener("change", handler);
     } else {
-      mq.addListener(handler as any);
-      return () => mq.removeListener(handler as any);
+      // @ts-ignore
+      mq.addListener(handler);
+      // @ts-ignore
+      return () => mq.removeListener(handler);
     }
   }, []);
   return isMobile;
@@ -41,7 +39,9 @@ function useIsMobile() {
    LocalStorage helpers
 -------------------------------------------------- */
 const FRONT_KEY = "wzb_dcmp_mf";
-const BACK_KEY = "wzb_dcmp_mb";
+const BACK_KEY  = "wzb_dcmp_mb";
+const BYTES_6MB = 6 * 1024 * 1024;
+const ALLOWED_TYPES = ["image/png","image/jpeg","image/jpg","image/webp","application/pdf"];
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -67,7 +67,7 @@ function loadImagesFromLocalStorage() {
   if (typeof window === "undefined") return { front: null, back: null };
   try {
     const front = localStorage.getItem(FRONT_KEY);
-    const back = localStorage.getItem(BACK_KEY);
+    const back  = localStorage.getItem(BACK_KEY);
     return { front: front || null, back: back || null };
   } catch {
     return { front: null, back: null };
@@ -75,15 +75,31 @@ function loadImagesFromLocalStorage() {
 }
 function removeFrontFromLocalStorage() {
   if (typeof window === "undefined") return;
-  try {
-    localStorage.removeItem(FRONT_KEY);
-  } catch {}
+  try { localStorage.removeItem(FRONT_KEY); } catch {}
 }
 function removeBackFromLocalStorage() {
   if (typeof window === "undefined") return;
-  try {
-    localStorage.removeItem(BACK_KEY);
-  } catch {}
+  try { localStorage.removeItem(BACK_KEY); } catch {}
+}
+
+/* -------------------------------------------------
+   Skeleton Loader (para o alerta amarelo)
+-------------------------------------------------- */
+function AlertPendingSkeleton() {
+  return (
+    <section className="w-full rounded-md border border-yellow-400/10 bg-[#0a0a0a] p-4 sm:p-5">
+      <div className="animate-pulse space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="h-5 w-28 rounded-full bg-yellow-500/10" />
+          <div className="h-4 w-24 rounded-full bg-yellow-500/10" />
+        </div>
+        <div className="h-4 w-2/3 rounded bg-yellow-500/10" />
+        <div className="h-4 w-full rounded bg-yellow-500/10" />
+        <div className="h-4 w-5/6 rounded bg-yellow-500/10" />
+        <div className="mt-4 h-9 w-40 rounded bg-yellow-500/10 ml-auto" />
+      </div>
+    </section>
+  );
 }
 
 /* -------------------------------------------------
@@ -175,7 +191,7 @@ export function AlertPending({
 }
 
 /* -------------------------------------------------
-   Modal de upload frente/verso
+   Modal de upload frente/verso (com validação em tempo real)
 -------------------------------------------------- */
 function UploadModal({
   open,
@@ -191,12 +207,15 @@ function UploadModal({
   initialBackB64: string | null;
 }) {
   const [frontFile, setFrontFile] = React.useState<File | null>(null);
-  const [backFile, setBackFile] = React.useState<File | null>(null);
+  const [backFile, setBackFile]   = React.useState<File | null>(null);
   const [frontPreview, setFrontPreview] = React.useState<string | null>(null);
-  const [backPreview, setBackPreview] = React.useState<string | null>(null);
+  const [backPreview, setBackPreview]   = React.useState<string | null>(null);
+
+  const [frontError, setFrontError] = React.useState<string | null>(null);
+  const [backError, setBackError]   = React.useState<string | null>(null);
 
   const frontBlobRef = React.useRef<string | null>(null);
-  const backBlobRef = React.useRef<string | null>(null);
+  const backBlobRef  = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (open) {
@@ -204,44 +223,66 @@ function UploadModal({
       setBackPreview(initialBackB64 || null);
       setFrontFile(null);
       setBackFile(null);
+      setFrontError(null);
+      setBackError(null);
 
-      if (frontBlobRef.current) {
-        URL.revokeObjectURL(frontBlobRef.current);
-        frontBlobRef.current = null;
-      }
-      if (backBlobRef.current) {
-        URL.revokeObjectURL(backBlobRef.current);
-        backBlobRef.current = null;
-      }
+      if (frontBlobRef.current) { URL.revokeObjectURL(frontBlobRef.current); frontBlobRef.current = null; }
+      if (backBlobRef.current)  { URL.revokeObjectURL(backBlobRef.current);  backBlobRef.current  = null; }
     }
   }, [open, initialFrontB64, initialBackB64]);
 
+  function validateFile(file: File): string | null {
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      return "Formato inválido. Use PNG, JPG, WEBP ou PDF.";
+    }
+    if (file.size > BYTES_6MB) {
+      return "Arquivo excede 6MB. Reduza a imagem/PDF.";
+    }
+    return null;
+  }
+
   React.useEffect(() => {
     if (frontFile) {
-      const url = URL.createObjectURL(frontFile);
-      if (frontBlobRef.current) URL.revokeObjectURL(frontBlobRef.current);
-      frontBlobRef.current = url;
-      setFrontPreview(url);
+      const err = validateFile(frontFile);
+      if (err) {
+        setFrontError(err);
+        setFrontFile(null);
+        setFrontPreview(null);
+      } else {
+        setFrontError(null);
+        const url = URL.createObjectURL(frontFile);
+        if (frontBlobRef.current) URL.revokeObjectURL(frontBlobRef.current);
+        frontBlobRef.current = url;
+        setFrontPreview(url);
+      }
     }
   }, [frontFile]);
 
   React.useEffect(() => {
     if (backFile) {
-      const url = URL.createObjectURL(backFile);
-      if (backBlobRef.current) URL.revokeObjectURL(backBlobRef.current);
-      backBlobRef.current = url;
-      setBackPreview(url);
+      const err = validateFile(backFile);
+      if (err) {
+        setBackError(err);
+        setBackFile(null);
+        setBackPreview(null);
+      } else {
+        setBackError(null);
+        const url = URL.createObjectURL(backFile);
+        if (backBlobRef.current) URL.revokeObjectURL(backBlobRef.current);
+        backBlobRef.current = url;
+        setBackPreview(url);
+      }
     }
   }, [backFile]);
 
   React.useEffect(() => {
     return () => {
       if (frontBlobRef.current) URL.revokeObjectURL(frontBlobRef.current);
-      if (backBlobRef.current) URL.revokeObjectURL(backBlobRef.current);
+      if (backBlobRef.current)  URL.revokeObjectURL(backBlobRef.current);
     };
   }, []);
 
-  const canConfirm = !!frontPreview || !!backPreview;
+  const canConfirm = (!!frontPreview || !!initialFrontB64) || (!!backPreview || !!initialBackB64);
   if (!open) return null;
 
   async function handleConfirmClick() {
@@ -261,6 +302,7 @@ function UploadModal({
     e.stopPropagation();
     setFrontFile(null);
     setFrontPreview(null);
+    setFrontError(null);
     if (frontBlobRef.current) {
       URL.revokeObjectURL(frontBlobRef.current);
       frontBlobRef.current = null;
@@ -271,6 +313,7 @@ function UploadModal({
     e.stopPropagation();
     setBackFile(null);
     setBackPreview(null);
+    setBackError(null);
     if (backBlobRef.current) {
       URL.revokeObjectURL(backBlobRef.current);
       backBlobRef.current = null;
@@ -281,6 +324,8 @@ function UploadModal({
     <div
       className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/70 p-5"
       onMouseDown={onClose}
+      aria-modal="true"
+      role="dialog"
     >
       <div
         className="flex w-full max-w-[800px] flex-col gap-4 rounded-md border border-neutral-800 bg-[#0a0a0a] p-5 shadow-xl"
@@ -289,7 +334,7 @@ function UploadModal({
         <div className="flex flex-col gap-1">
           <div className="text-[20px] font-semibold text-foreground">Enviar documento</div>
           <div className="text-[14px] leading-relaxed text-muted-foreground">
-            Envie frente e verso do seu documento oficial com foto.
+            Envie frente e verso do seu documento oficial com foto. <span className="font-medium">Máx. 6MB por arquivo</span>.
           </div>
         </div>
 
@@ -319,13 +364,13 @@ function UploadModal({
                 </div>
                 <div className="flex flex-col gap-1 text-center text-[12px] leading-tight">
                   <span className="font-medium text-foreground">Clique para enviar</span>
-                  <span className="text-muted-foreground">PNG, JPG, PDF — máx 10MB</span>
+                  <span className="text-muted-foreground">PNG, JPG, WEBP ou PDF — máx 6MB</span>
                 </div>
               </div>
             )}
             <input
               type="file"
-              accept="image/*,.pdf"
+              accept={ALLOWED_TYPES.join(",")}
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -333,6 +378,9 @@ function UploadModal({
               }}
             />
           </label>
+          {frontError && (
+            <div className="text-[12px] text-red-400" role="alert" aria-live="polite">{frontError}</div>
+          )}
         </div>
 
         {/* Verso */}
@@ -361,13 +409,13 @@ function UploadModal({
                 </div>
                 <div className="flex flex-col gap-1 text-center text-[12px] leading-tight">
                   <span className="font-medium text-foreground">Clique para enviar</span>
-                  <span className="text-muted-foreground">PNG, JPG, PDF — máx 10MB</span>
+                  <span className="text-muted-foreground">PNG, JPG, WEBP ou PDF — máx 6MB</span>
                 </div>
               </div>
             )}
             <input
               type="file"
-              accept="image/*,.pdf"
+              accept={ALLOWED_TYPES.join(",")}
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -375,19 +423,19 @@ function UploadModal({
               }}
             />
           </label>
+          {backError && (
+            <div className="text-[12px] text-red-400" role="alert" aria-live="polite">{backError}</div>
+          )}
         </div>
 
         <div className="flex flex-col gap-2 pt-2">
           <Button
             className={cn(
               "w-full cursor-pointer rounded-md bg-[#26FF59]/90 py-[1.375rem] text-[15px] font-semibold text-black hover:bg-[#26FF59]",
-              !(frontPreview || backPreview) && "pointer-events-none cursor-not-allowed opacity-30"
+              !canConfirm && "pointer-events-none cursor-not-allowed opacity-30"
             )}
-            onClick={async () => {
-              let f = frontPreview, b = backPreview;
-              onConfirm(f || null, b || null);
-            }}
-            disabled={!(frontPreview || backPreview)}
+            onClick={handleConfirmClick}
+            disabled={!canConfirm}
           >
             Confirmar envio
           </Button>
@@ -406,22 +454,22 @@ function UploadModal({
 }
 
 /* -------------------------------------------------
-   Bloco de confirmação inline (substitui os quadros)
+   Bloco de confirmação inline (único, centralizado)
 -------------------------------------------------- */
 function InlineConfirmation() {
   return (
-    <div className="flex items-center justify-center">
+    <div className="flex min-h-[60vh] items-center justify-center">
       <div className="w-full max-w-[520px] rounded-xl border border-neutral-800 bg-[#0b0b0b] p-6 text-center shadow-2xl">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#26FF59]/20">
-          <svg viewBox="0 0 24 24" className="h-9 w-9" fill="none" stroke="currentColor" strokeWidth={2.2}>
+          <svg viewBox="0 0 24 24" className="h-9 w-9" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
             <path d="M20 6L9 17l-5-5" className="text-[#26FF59]" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
 
-        <h3 className="text-lg font-semibold text-white">Documentos Enviados</h3>
+        <h3 className="text-lg font-semibold text-white">Documentos enviados</h3>
         <p className="mt-2 text-sm leading-relaxed text-white/70">
-          Seus documentos foram enviados com sucesso e estão em análise. O processo pode levar de{" "}
-          <strong>3 a 5 dias úteis</strong> para serem validados ou recusados.
+          Seus documentos foram enviados com sucesso e estão em análise.
+          O processo pode levar de <strong>3 a 5 dias úteis</strong>.
         </p>
       </div>
     </div>
@@ -430,12 +478,14 @@ function InlineConfirmation() {
 
 /* -------------------------------------------------
    Drawer principal
+   - Quando inlineSuccess === true, renderiza apenas <InlineConfirmation />
+     (sem header, sem dados pessoais, sem footer) e centralizado.
 -------------------------------------------------- */
 function VerifyDocumentsDrawer({
   open,
   onOpenChange,
   user,
-  lockedFromServer = false,  // se veio travado do GET
+  lockedFromServer = false,
   onSubmitted,
 }: {
   open: boolean;
@@ -448,20 +498,21 @@ function VerifyDocumentsDrawer({
 
   // documentos
   const [frontConfirmed, setFrontConfirmed] = React.useState<string | null>(null);
-  const [backConfirmed, setBackConfirmed] = React.useState<string | null>(null);
+  const [backConfirmed, setBackConfirmed]   = React.useState<string | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = React.useState(false);
 
   // selfie / qr
   const [qrUrl, setQrUrl] = React.useState<string | null>(null);
   const [sessionTicket, setSessionTicket] = React.useState<string | null>(null);
   const [qrLoading, setQrLoading] = React.useState(false);
-  const [qrError, setQrError] = React.useState<string | null>(null);
+  const [qrError, setQrError]     = React.useState<string | null>(null);
   const [selfiePreview, setSelfiePreview] = React.useState<string | null>(null);
 
   // envio
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
   const [submitted, setSubmitted] = React.useState(false);
+  const inFlightSubmit = React.useRef(false);
 
   // evita bootstrap duplo
   const bootstrappedRef = React.useRef(false);
@@ -471,13 +522,13 @@ function VerifyDocumentsDrawer({
     if (!open) return;
     const { front, back } = loadImagesFromLocalStorage();
     if (front) setFrontConfirmed(front);
-    if (back) setBackConfirmed(back);
+    if (back)  setBackConfirmed(back);
   }, [open]);
 
   // Cria/renova sessão QR (apenas se não houver selfie ainda e não estiver travado)
   const bootstrapQRSession = React.useCallback(async () => {
     if (selfiePreview) return;
-    if (lockedFromServer || submitted) return; // já não precisa
+    if (lockedFromServer || submitted) return;
 
     try {
       setQrLoading(true);
@@ -534,7 +585,6 @@ function VerifyDocumentsDrawer({
   async function handleRemoveSelfie(e: React.MouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
     if (lockedFromServer || submitted) return;
-
     try {
       setQrLoading(true);
       setQrError(null);
@@ -585,6 +635,7 @@ function VerifyDocumentsDrawer({
   // envio final
   async function handleSubmitDocument() {
     if (lockedFromServer || submitted) return;
+    if (inFlightSubmit.current) return;
     setSubmitError(null);
 
     if (!frontConfirmed || !backConfirmed || !selfiePreview) {
@@ -592,6 +643,7 @@ function VerifyDocumentsDrawer({
       return;
     }
 
+    inFlightSubmit.current = true;
     setSubmitting(true);
     try {
       const res = await fetch("/api/envite-docs", {
@@ -614,23 +666,22 @@ function VerifyDocumentsDrawer({
 
       const data = await res.json();
 
-      // Se já tinha em análise, consideramos "ok" e travamos a UI do mesmo jeito
       if (res.status === 409 && (data?.code === "ALREADY_IN_REVIEW" || data?.locked)) {
         setSubmitted(true);
         onSubmitted?.();
         return;
       }
-
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Falha ao enviar os documentos.");
       }
 
       setSubmitted(true);
-      onSubmitted?.(); // trava alerta
+      onSubmitted?.();
     } catch (err: any) {
       setSubmitError(err?.message || "Erro ao enviar os documentos.");
     } finally {
       setSubmitting(false);
+      inFlightSubmit.current = false;
     }
   }
 
@@ -638,11 +689,6 @@ function VerifyDocumentsDrawer({
     if (!next && uploadModalOpen) return; // evita fechar com modal aberto
     onOpenChange(next);
   }
-
-  const displayName = user?.name || "Usuário";
-  const cpfOrCnpj = user?.cpfOrCnpj || "—";
-  const email = user?.email || "indisponível@wyzebank.com";
-  const phone = user?.phone || "—";
 
   const canSend = !!frontConfirmed && !!backConfirmed && !!selfiePreview;
   const inlineSuccess = lockedFromServer || submitted;
@@ -660,57 +706,55 @@ function VerifyDocumentsDrawer({
       <Drawer open={open} onOpenChange={handleDrawerOpenChange} direction={isMobile ? "bottom" : "right"}>
         <DrawerContent
           className={cn(
-            "group/drawer-content bg-background fixed z-50 flex h-auto flex-col",
+            "bg-background fixed z-50 flex h-auto flex-col",
             "data-[vaul-drawer-direction=top]:inset-x-0 data-[vaul-drawer-direction=top]:top-0 data-[vaul-drawer-direction=top]:mb-24 data-[vaul-drawer-direction=top]:max-h-[80vh] data-[vaul-drawer-direction=top]:rounded-b-lg data-[vaul-drawer-direction=top]:border-b",
             "data-[vaul-drawer-direction=bottom]:inset-x-0 data-[vaul-drawer-direction=bottom]:bottom-0 data-[vaul-drawer-direction=bottom]:mt-24 data-[vaul-drawer-direction=bottom]:max-h-[80vh] data-[vaul-drawer-direction=bottom]:rounded-t-lg data-[vaul-drawer-direction=bottom]:border-t",
             "data-[vaul-drawer-direction=right]:inset-y-0 data-[vaul-drawer-direction=right]:right-0 data-[vaul-drawer-direction=right]:w-[90vw] data-[vaul-drawer-direction=right]:border-l data-[vaul-drawer-direction=right]:sm:max-w-md data-[vaul-drawer-direction=right]:lg:max-w-lg",
             "data-[vaul-drawer-direction=left]:inset-y-0 data-[vaul-drawer-direction=left]:left-0 data-[vaul-drawer-direction=left]:w-[90vw] data-[vaul-drawer-direction=left]:border-r data-[vaul-drawer-direction=left]:sm:max-w-md data-[vaul-drawer-direction=left]:lg:max-w-lg"
           )}
         >
-          {/* puxador mobile */}
-          <div className="group-data-[vaul-drawer-direction=bottom]/drawer-content:block mx-auto mt-4 hidden h-2 w-[100px] shrink-0 rounded-full bg-[#050505]" />
-
-          <DrawerHeader className="gap-1 px-4 sm:px-6">
-            <DrawerTitle className="text-[20px] font-semibold text-foreground">Verificação de Identidade</DrawerTitle>
-            <DrawerDescription className="text-[15px] leading-relaxed text-muted-foreground">
-              Para liberar limites maiores (PIX, cartão etc.), confirme quem é você.
-            </DrawerDescription>
-          </DrawerHeader>
-
-          <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-4 text-sm sm:px-6">
-            {/* DADOS PESSOAIS */}
-            <div className="grid gap-4 text-[13px] leading-relaxed">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Nome completo</label>
-                  <input readOnly value={displayName} className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">CPF / CNPJ</label>
-                  <input readOnly value={cpfOrCnpj} className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
-                </div>
+          {inlineSuccess ? (
+            // Só a confirmação central, sem header/dados/footer
+            <InlineConfirmation />
+          ) : (
+            <>
+              {/* Cabeçalho */}
+              <div className="px-4 pt-4 sm:px-6">
+                <h2 className="text-[20px] font-semibold text-foreground">Verificação de Identidade</h2>
+                <p className="text-[15px] leading-relaxed text-muted-foreground">
+                  Para liberar limites maiores (PIX, cartão etc.), confirme quem é você.
+                </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">E-mail</label>
-                  <input readOnly value={email} className="w-full break-all select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Telefone</label>
-                  <input readOnly value={phone} className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
-                </div>
-              </div>
-            </div>
+              {/* Conteúdo */}
+              <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-4 text-sm sm:px-6">
+                {/* DADOS PESSOAIS (somente antes do envio) */}
+                <div className="grid gap-4 text-[13px] leading-relaxed">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Nome completo</label>
+                      <input readOnly value={user?.name || "Usuário"} className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">CPF / CNPJ</label>
+                      <input readOnly value={user?.cpfOrCnpj || "—"} className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
+                    </div>
+                  </div>
 
-            <Separator />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">E-mail</label>
+                      <input readOnly value={user?.email || "indisponível@wyzebank.com"} className="w-full break-all select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Telefone</label>
+                      <input readOnly value={user?.phone || "—"} className="w-full select-none rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default" />
+                    </div>
+                  </div>
+                </div>
 
-            {/* ======= CONTEÚDO PRINCIPAL ======= */}
-            {inlineSuccess ? (
-              // substitui os dois blocos pontilhados por uma confirmação central
-              <InlineConfirmation />
-            ) : (
-              <>
+                <Separator />
+
                 {/* DOCUMENTO ENVIADO (quadro pontilhado) */}
                 <div className="grid gap-2">
                   <div className="text-[16px] font-medium text-foreground">Documento enviado</div>
@@ -795,7 +839,7 @@ function VerifyDocumentsDrawer({
                     )}
                   </div>
 
-                  {submitError && <div className="text-[12px] text-red-400">{submitError}</div>}
+                  {submitError && <div className="text-[12px] text-red-400" role="alert" aria-live="polite">{submitError}</div>}
 
                   <div className="text-[14px] leading-relaxed text-muted-foreground">
                     • Documento legível (sem blur / sem corte).<br />• Não use filtros pesados nem tampe informação.
@@ -861,37 +905,47 @@ function VerifyDocumentsDrawer({
                         </div>
                       )}
                     </div>
+
+                    {/* Ações de QR quando erro */}
+                    {qrError && !selfiePreview && (
+                      <div className="mt-3 flex gap-2">
+                        <Button size="sm" variant="outline" onClick={bootstrapQRSession}>Tentar novamente</Button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="text-[13px] leading-relaxed text-muted-foreground">
                     • Boa iluminação e rosto totalmente visível.<br />• Sem óculos escuros, máscara ou boné cobrindo o rosto.
                   </div>
                 </div>
-              </>
-            )}
-          </div>
+              </div>
 
-          <DrawerFooter className="gap-2 px-4 pb-4 pt-0 sm:px-6">
-            <Button
-              size="sm"
-              className={cn(
-                "w-full rounded-md py-5 text-[14px] font-semibold",
-                inlineSuccess
-                  ? "cursor-not-allowed bg-[#26FF59]/20 text-[#26FF59] opacity-80"
-                  : "bg-[#26FF59]/90 text-black hover:bg-[#26FF59]"
-              )}
-              onClick={handleSubmitDocument}
-              disabled={inlineSuccess || !canSend || submitting}
-            >
-              {inlineSuccess ? "Em validação" : submitting ? "Enviando..." : "Enviar documento"}
-            </Button>
-
-            <DrawerClose asChild>
-              <Button size="sm" variant="outline" className="w-full cursor-pointer py-5 text-[14px] font-semibold">
-                Fechar
-              </Button>
-            </DrawerClose>
-          </DrawerFooter>
+              {/* Footer */}
+              <div className="gap-2 px-4 pb-4 pt-0 sm:px-6">
+                <Button
+                  size="sm"
+                  className={cn(
+                    "w-full rounded-md py-5 text-[14px] font-semibold",
+                    !canSend
+                      ? "pointer-events-none cursor-not-allowed opacity-30 bg-[#26FF59]/90 text-black"
+                      : "bg-[#26FF59]/90 text-black hover:bg-[#26FF59]"
+                  )}
+                  onClick={handleSubmitDocument}
+                  disabled={!canSend || submitting}
+                >
+                  {submitting ? "Enviando..." : "Enviar documento"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 w-full cursor-pointer py-5 text-[14px] font-semibold"
+                  onClick={() => handleDrawerOpenChange(false)}
+                >
+                  Fechar
+                </Button>
+              </div>
+            </>
+          )}
         </DrawerContent>
       </Drawer>
     </>
@@ -899,7 +953,7 @@ function VerifyDocumentsDrawer({
 }
 
 /* -------------------------------------------------
-   Wrapper (alerta + drawer) com verificação no F5
+   Wrapper (alerta + drawer) com skeleton no load e verificação no F5
 -------------------------------------------------- */
 export function VerifyDocumentsSection({
   user,
@@ -907,7 +961,8 @@ export function VerifyDocumentsSection({
   user: { id: number; name: string; email: string; cpfOrCnpj: string; phone: string };
 }) {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
-  const [inReview, setInReview] = React.useState(false);
+  const [inReview, setInReview]     = React.useState(false);
+  const [loadingStatus, setLoadingStatus] = React.useState(true);
 
   // Checa no load (e no F5) se já está em análise/aprovado
   React.useEffect(() => {
@@ -924,20 +979,24 @@ export function VerifyDocumentsSection({
         }
       } catch {
         setInReview(false);
+      } finally {
+        if (alive) setLoadingStatus(false);
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
 
   return (
     <>
-      <AlertPending
-        onVerify={() => setDrawerOpen(true)}
-        className="border-yellow-400/30 bg-[#050505]"
-        locked={inReview}
-      />
+      {loadingStatus ? (
+        <AlertPendingSkeleton />
+      ) : (
+        <AlertPending
+          onVerify={() => setDrawerOpen(true)}
+          className="border-yellow-400/30 bg-[#050505]"
+          locked={inReview}
+        />
+      )}
 
       <VerifyDocumentsDrawer
         open={drawerOpen}
