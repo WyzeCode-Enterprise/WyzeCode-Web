@@ -15,9 +15,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
-/* -------------------------------------------------
-   Hook interno: useIsMobile
--------------------------------------------------- */
 function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState(false);
 
@@ -28,15 +25,12 @@ function useIsMobile() {
       setIsMobile(e.matches);
     };
 
-    // run once
     handler(mq);
 
-    // attach listener
     if (typeof mq.addEventListener === "function") {
       mq.addEventListener("change", handler);
       return () => mq.removeEventListener("change", handler);
     } else {
-      // Safari <=14
       mq.addListener(handler as any);
       return () => mq.removeListener(handler as any);
     }
@@ -45,11 +39,6 @@ function useIsMobile() {
   return isMobile;
 }
 
-/* -------------------------------------------------
-   Helpers de persistência local
-   - converte File -> base64
-   - salva / carrega / remove localStorage
--------------------------------------------------- */
 const FRONT_KEY = "wzb_dcmp_mf";
 const BACK_KEY = "wzb_dcmp_mb";
 
@@ -64,7 +53,7 @@ async function fileToBase64(file: File): Promise<string> {
         reject(new Error("Falha ao ler o arquivo."));
       }
     };
-    reader.readAsDataURL(file); // data:image/png;base64,...
+    reader.readAsDataURL(file);
   });
 }
 
@@ -124,9 +113,6 @@ function removeBackFromLocalStorage() {
   }
 }
 
-/* -------------------------------------------------
-   Banner amarelo (alerta do topo)
--------------------------------------------------- */
 export function AlertPending({
   onVerify,
   className,
@@ -134,16 +120,18 @@ export function AlertPending({
   onVerify?: () => void;
   className?: string;
 }) {
-  return (
-    <section
-      className={[
-        "relative w-full rounded-md border border-yellow-400/30 bg-[#050505] p-4 sm:p-5",
-        "dark:border-yellow-400/30 dark:bg-[#1a1a1a]/60",
-        className || "",
-      ].join(" ")}
-    >
-      <div className="flex flex-col gap-1 text-left pr-32 sm:pr-40">
-        <div className="flex items-center gap-3">
+return (
+  <section
+    className={[
+      "relative w-full rounded-md border border-yellow-400/30 bg-[#050505] p-4 sm:p-5",
+      "dark:border-yellow-400/30 dark:bg-[#1a1a1a]/60",
+      className || "",
+    ].join(" ")}
+  >
+
+    <div className="flex flex-col gap-4 sm:gap-1 text-left sm:pr-40">
+      <div className="flex flex-col gap-1 text-left sm:pr-40">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="inline-flex items-center rounded-full border border-yellow-400/40 bg-yellow-500/10 px-2 py-[3px] text-[11px] font-medium leading-none text-yellow-400">
             Ação necessária
           </span>
@@ -153,41 +141,53 @@ export function AlertPending({
           </span>
         </div>
 
-        <div className="mt-2 text-[17px] font-semibold leading-snug text-yellow-200">
+        <div className="mt-2 text-[16px] font-semibold leading-snug text-yellow-200 sm:text-[17px]">
           Você ainda precisa verificar seus documentos
         </div>
 
-        <p className="max-w-[120ch] text-[14px] leading-relaxed text-yellow-200/70">
+        <p className="max-w-[120ch] text-[13px] leading-relaxed text-yellow-200/70 sm:text-[14px]">
           Valide seu documento e sua idade para ativar o Wyze Bank. Sem essa
           etapa, sua conta permanece limitada ao Wyze Bank Pay e fica sujeita a
           limites de uso e possível retenção de saldo.
         </p>
       </div>
 
-      <button
-        type="button"
-        onClick={onVerify}
-        className={[
-          "absolute bottom-4 right-4",
-          "inline-flex cursor-pointer items-center justify-center rounded-md",
-          "bg-yellow-400 px-6 py-2 text-[13px] font-semibold text-black",
-          "hover:bg-yellow-300 active:scale-[0.99]",
-          "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0",
-          "transition-all",
-        ].join(" ")}
-      >
-        Verificar documentos
-      </button>
-    </section>
-  );
+      <div className="sm:hidden">
+        <button
+          type="button"
+          onClick={onVerify}
+          className={[
+            "w-full inline-flex cursor-pointer items-center justify-center rounded-md",
+            "bg-yellow-400 px-6 py-2 text-[13px] font-semibold text-black",
+            "hover:bg-yellow-300 active:scale-[0.99]",
+            "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0",
+            "transition-all",
+          ].join(" ")}
+        >
+          Verificar documentos
+        </button>
+      </div>
+    </div>
+
+    <button
+      type="button"
+      onClick={onVerify}
+      className={[
+        "hidden sm:inline-flex",
+        "absolute bottom-4 right-4",
+        "cursor-pointer items-center justify-center rounded-md",
+        "bg-yellow-400 px-6 py-2 text-[13px] font-semibold text-black",
+        "hover:bg-yellow-300 active:scale-[0.99]",
+        "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0",
+        "transition-all",
+      ].join(" ")}
+    >
+      Verificar documentos
+    </button>
+  </section>
+);
 }
 
-/* -------------------------------------------------
-   Modal central de upload frente/verso
-   - aparece em cima do drawer
-   - aceita reenvio parcial (frente OU verso OU ambos)
-   - confirma se ao menos um lado está presente
--------------------------------------------------- */
 function UploadModal({
   open,
   onClose,
@@ -201,15 +201,11 @@ function UploadModal({
   initialFrontB64: string | null;
   initialBackB64: string | null;
 }) {
-  // arquivos novos escolhidos agora
   const [frontFile, setFrontFile] = React.useState<File | null>(null);
   const [backFile, setBackFile] = React.useState<File | null>(null);
-
-  // previews visuais no modal (podem vir do estado salvo OU de um upload novo)
   const [frontPreview, setFrontPreview] = React.useState<string | null>(null);
   const [backPreview, setBackPreview] = React.useState<string | null>(null);
 
-  // sempre que o modal abre: carrega o que já existe e reseta os arquivos novos
   React.useEffect(() => {
     if (open) {
       setFrontPreview(initialFrontB64 || null);
@@ -219,7 +215,6 @@ function UploadModal({
     }
   }, [open, initialFrontB64, initialBackB64]);
 
-  // se o usuário escolheu frente nova agora, atualiza preview
   React.useEffect(() => {
     if (frontFile) {
       const url = URL.createObjectURL(frontFile);
@@ -227,7 +222,6 @@ function UploadModal({
     }
   }, [frontFile]);
 
-  // se o usuário escolheu verso novo agora, atualiza preview
   React.useEffect(() => {
     if (backFile) {
       const url = URL.createObjectURL(backFile);
@@ -235,15 +229,11 @@ function UploadModal({
     }
   }, [backFile]);
 
-  // pode confirmar se tem pelo menos UMA imagem (frentePreview ou backPreview)
   const canConfirm = !!frontPreview || !!backPreview;
 
   if (!open) return null;
 
   async function handleConfirmClick() {
-    // monta base64 final pra cada lado:
-    // se tem arquivo novo, converte
-    // senão reaproveita a imagem que já estava salva
     let finalFrontB64: string | null = null;
     let finalBackB64: string | null = null;
 
@@ -267,25 +257,22 @@ function UploadModal({
   }
 
   return (
-    // BACKDROP
     <div
       className={cn(
         "fixed inset-0 z-[9999999] flex items-center justify-center p-5 bg-black/70"
       )}
-      // clicar fora fecha modal
       onMouseDown={onClose}
     >
-      {/* CARD DO MODAL */}
       <div
         className={cn(
           "flex w-full max-w-[800px] flex-col gap-4 rounded-md border border-neutral-800 bg-[#0a0a0a] p-5 shadow-xl"
         )}
-        // impede clique interno de fechar
+
         onMouseDown={(e) => {
           e.stopPropagation();
         }}
       >
-        {/* Header modal */}
+
         <div className="flex flex-col gap-1">
           <div className="text-[20px] font-semibold text-foreground">
             Enviar documento
@@ -296,7 +283,6 @@ function UploadModal({
           </div>
         </div>
 
-        {/* Upload frente */}
         <div className="flex flex-col gap-2">
           <div className="text-[16px] font-medium text-foreground">
             Frente do documento
@@ -344,7 +330,6 @@ function UploadModal({
           </label>
         </div>
 
-        {/* Upload verso */}
         <div className="flex flex-col gap-2">
           <div className="text-[16px] font-medium text-foreground">
             Verso do documento
@@ -356,7 +341,7 @@ function UploadModal({
             )}
           >
             {backPreview ? (
-              <div className="relative h-[140px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
+              <div className="relative h-[200px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
                 <Image
                   src={backPreview}
                   alt="Verso documento"
@@ -392,7 +377,6 @@ function UploadModal({
           </label>
         </div>
 
-        {/* Botões modal */}
         <div className="flex flex-col gap-2 pt-2">
           <Button
             className={cn(
@@ -418,14 +402,6 @@ function UploadModal({
   );
 }
 
-/* -------------------------------------------------
-   Drawer de verificação (KYC)
-   - inputs readonly
-   - layout 2x2 (Nome/CPF | Email/Telefone)
-   - persistência localStorage
-   - botões de remover frente/verso SEM nested button
-   - impede drawer fechar enquanto modal está aberto
--------------------------------------------------- */
 function VerifyDocumentsDrawer({
   open,
   onOpenChange,
@@ -442,16 +418,13 @@ function VerifyDocumentsDrawer({
 }) {
   const isMobile = useIsMobile();
 
-  // imagens confirmadas base64
   const [frontConfirmed, setFrontConfirmed] = React.useState<string | null>(
     null
   );
   const [backConfirmed, setBackConfirmed] = React.useState<string | null>(null);
 
-  // modal aberto?
   const [uploadModalOpen, setUploadModalOpen] = React.useState(false);
 
-  // carregar do localStorage quando o drawer abrir
   React.useEffect(() => {
     if (!open) return;
     const { front, back } = loadImagesFromLocalStorage();
@@ -459,7 +432,6 @@ function VerifyDocumentsDrawer({
     if (back) setBackConfirmed(back);
   }, [open]);
 
-  // confirmar imagens enviadas no modal
   function handleConfirmUpload(
     finalFrontB64: string | null,
     finalBackB64: string | null
@@ -620,11 +592,11 @@ function VerifyDocumentsDrawer({
 
             {/* DOCUMENTO ENVIADO */}
             <div className="grid gap-2">
-              <div className="text-[13px] font-medium text-foreground">
+              <div className="text-[16px] font-medium text-foreground">
                 Documento enviado
               </div>
 
-              <div className="text-[12px] leading-snug text-muted-foreground">
+              <div className="text-[14px] leading-snug text-muted-foreground">
                 Essas são as imagens que você confirmou. Se algo estiver errado,
                 você pode reenviar.
               </div>
@@ -719,7 +691,7 @@ function VerifyDocumentsDrawer({
                 )}
               </div>
 
-              <div className="text-[11px] leading-relaxed text-muted-foreground">
+              <div className="text-[14px] leading-relaxed text-muted-foreground">
                 • Documento precisa estar visível e legível.
                 <br />
                 • Não utilize filtro ou edição pesada.
@@ -730,7 +702,7 @@ function VerifyDocumentsDrawer({
 
             {/* aviso legal */}
             <div className="rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3">
-              <p className="text-[12px] font-medium leading-relaxed text-yellow-400">
+              <p className="text-[13px] font-medium leading-relaxed text-yellow-400">
                 Importante
               </p>
               <p className="text-[12px] leading-relaxed text-yellow-200/80">
