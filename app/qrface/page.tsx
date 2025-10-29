@@ -26,9 +26,10 @@ export default function QRFacePage() {
       try {
         const media = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: "user", // frontal
+            facingMode: "user",
           },
         });
+
         if (videoRef.current) {
           videoRef.current.srcObject = media;
           await videoRef.current.play();
@@ -41,22 +42,20 @@ export default function QRFacePage() {
     }
     openCamera();
 
-    // cleanup parar camera
+    // cleanup parar camera ao sair
     return () => {
-      const tracks = (videoRef.current?.srcObject as MediaStream)
-        ?.getTracks?.();
+      const tracks = (videoRef.current?.srcObject as MediaStream)?.getTracks?.();
       tracks?.forEach((t) => t.stop());
     };
   }, []);
 
-  // captura foto atual do vídeo e envia pro backend
+  // captura foto atual do vídeo e envia
   async function handleCaptureAndSend() {
     if (!videoRef.current || !canvasRef.current || !token || done) return;
 
     setCapturing(true);
     setErrorMsg(null);
 
-    // desenhar o frame atual no canvas
     const videoEl = videoRef.current;
     const canvasEl = canvasRef.current;
 
@@ -78,7 +77,6 @@ export default function QRFacePage() {
     // pega base64
     const dataUrl = canvasEl.toDataURL("image/jpeg", 0.9);
 
-    // manda para API
     try {
       const resp = await fetch("/api/qrface", {
         method: "PUT",
@@ -98,7 +96,7 @@ export default function QRFacePage() {
         return;
       }
 
-      // sucesso: guarda preview e bloqueia mais captura
+      // sucesso
       setSelfiePreview(data.selfiePreview || dataUrl);
       setDone(true);
     } catch (err: any) {
@@ -112,19 +110,14 @@ export default function QRFacePage() {
   return (
     <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-sm flex flex-col items-center gap-6">
-
         <header className="text-center flex flex-col gap-2">
-          <h1 className="text-xl font-semibold text-white">
-            Verificação de rosto
-          </h1>
+          <h1 className="text-xl font-semibold text-white">Verificação de rosto</h1>
           <p className="text-sm text-white/60 leading-relaxed">
-            Posicione seu rosto dentro do contorno e toque em
-            &nbsp;
+            Posicione seu rosto dentro do contorno e toque em{" "}
             <strong className="text-white font-medium">Capturar</strong>.
           </p>
         </header>
 
-        {/* se já enviou, mostra a foto final */}
         {selfiePreview ? (
           <div className="relative w-[260px] h-[260px] rounded-xl overflow-hidden ring-1 ring-white/20 bg-neutral-900 flex items-center justify-center">
             <img
@@ -138,9 +131,8 @@ export default function QRFacePage() {
           </div>
         ) : (
           <>
-            {/* VIEWFINDER */}
+            {/* vídeo + overlay oval */}
             <div className="relative w-[260px] h-[260px] flex items-center justify-center">
-              {/* vídeo da câmera */}
               <video
                 ref={videoRef}
                 className="absolute inset-0 w-full h-full object-cover rounded-xl"
@@ -148,10 +140,10 @@ export default function QRFacePage() {
                 muted
               />
 
-              {/* máscara oval (apenas overlay visual) */}
+              {/* Oval verde */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div
-                  className="w-[200px] h-[260px] rounded-full border-2 border-[#26FF59] shadow-[0_0_30px_#26FF5966]"
+                  className="w-[200px] h-[260px] rounded-full border-2 border-[#26FF59]"
                   style={{
                     boxShadow:
                       "0 0 25px rgba(38,255,89,0.4), 0 0 60px rgba(38,255,89,0.15)",
@@ -159,7 +151,7 @@ export default function QRFacePage() {
                 />
               </div>
 
-              {/* fade escuro fora da oval */}
+              {/* escurecer volta */}
               <div
                 className="absolute inset-0 pointer-events-none rounded-xl"
                 style={{
@@ -169,19 +161,17 @@ export default function QRFacePage() {
               />
             </div>
 
-            {/* canvas invisível pra captura do frame */}
+            {/* canvas oculto pra captura */}
             <canvas ref={canvasRef} className="hidden" />
           </>
         )}
 
-        {/* status / erro */}
         {errorMsg && (
           <div className="text-red-400 text-xs text-center leading-relaxed">
             {errorMsg}
           </div>
         )}
 
-        {/* botão de ação */}
         {!selfiePreview && (
           <button
             onClick={handleCaptureAndSend}
@@ -204,7 +194,7 @@ export default function QRFacePage() {
         )}
 
         <footer className="text-[10px] text-white/30 text-center leading-relaxed max-w-[240px]">
-          Use boa iluminação. Não cubra seu rosto com óculos escuros, boné ou máscara.
+          Iluminação clara e rosto descoberto. Evite óculos escuros, máscara ou boné cobrindo o rosto.
         </footer>
       </div>
     </main>
