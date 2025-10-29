@@ -488,7 +488,7 @@ function VerifyDocumentsDrawer({
   // dados do usuário vindos do servidor
   const name = user?.name || "Usuário";
   const cpfOrCnpj = user?.cpfOrCnpj || "—";
-  const email = user?.email || "indisponível@wyze";
+  const email = user?.email || "indisponível@wyzebank.com";
   const phone = user?.phone || "—";
 
   return (
