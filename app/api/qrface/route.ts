@@ -523,13 +523,13 @@ export async function PUT(req: NextRequest) {
     //   );
     // }
 
-    // se já não está mais pending_face, bloqueia reuso
-    if (sess.status !== "pending_face") {
-      return jsonNoStore(
-        { error: "Sessão já utilizada / bloqueada." },
-        { status: 400 }
-      );
-    }
+    // // se já não está mais pending_face, bloqueia reuso
+    // if (sess.status !== "pending_face") {
+    //   return jsonNoStore(
+    //     { error: "Sessão já utilizada / bloqueada." },
+    //     { status: 400 }
+    //   );
+    // }
 
     // salva selfie
     await db.query(
