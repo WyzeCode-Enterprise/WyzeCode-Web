@@ -4,35 +4,46 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 
 /**
- * Gera token randômico ~200 chars base64url (ultra difícil de adivinhar).
+ * CONFIG
  */
-function generateToken200() {
-  return crypto.randomBytes(150).toString("base64url");
+const TOKEN_LIFETIME_MIN = 5;
+const EXPIRE_GRACE_SECONDS = 2;
+
+// segredo pra assinar o ticket da sessão facial
+// use uma env específica se quiser separar do login normal
+const FACE_SESSION_SECRET =
+  process.env.FACE_SESSION_SECRET || process.env.JWT_SECRET || "supersecretkey";
+
+/**
+ * Gera token randômico grande só pra auditoria interna (não usamos mais pra lookup).
+ * Isso ainda é útil pra ter um "nonce" forte atrelado à sessão no banco.
+ */
+function generateInternalToken() {
+  return crypto.randomBytes(150).toString("base64url"); // ~200 chars URL-safe
 }
 
 /**
- * Código curto de 6 dígitos. Ele pode repetir em momentos diferentes,
- * não é "segredo", é só um ID humano-curto de sessão.
+ * Código humano de 6 dígitos pra debug/atendimento
  */
 function generateWCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 /**
- * Lê cookie wzb_lg do request
+ * Lê cookie de sessão principal (login do dashboard)
  */
 function getSessionCookie(req: NextRequest): string | null {
   const cookieHeader = req.headers.get("cookie") || "";
-  const entry = cookieHeader
+  const found = cookieHeader
     .split(";")
     .map((c) => c.trim())
     .find((c) => c.startsWith("wzb_lg="));
-  if (!entry) return null;
-  return entry.replace("wzb_lg=", "");
+  if (!found) return null;
+  return found.replace("wzb_lg=", "");
 }
 
 /**
- * Valida JWT e retorna uid do user logado.
+ * Valida o JWT de login do dashboard e retorna o user_id
  */
 function getUserIdFromSessionToken(rawToken: string | null): number | null {
   if (!rawToken) return null;
@@ -50,30 +61,84 @@ function getUserIdFromSessionToken(rawToken: string | null): number | null {
 }
 
 /**
- * Segurança básica de base64: obriga começar com "data:image/"
- * e um tamanho plausível (evita request gigante absurda).
+ * Assina um "ticket" curto que representa a sessão de face.
+ * Esse ticket vai parar dentro do QR e depois vai voltar do celular.
+ * payload mínimo = { sid: <id da linha wzb_tokens> }
+ */
+function signFaceSessionTicket(sessionId: number) {
+  const payload = { sid: sessionId };
+  // expiração no próprio JWT também, belt & suspenders
+  const expiresInSec = TOKEN_LIFETIME_MIN * 60 + EXPIRE_GRACE_SECONDS;
+  return jwt.sign(payload, FACE_SESSION_SECRET, { expiresIn: expiresInSec });
+}
+
+/**
+ * Lê o ticket e devolve { sid } ou null se inválido / expirado.
+ */
+function verifyFaceSessionTicket(ticket: string | null): { sid: number } | null {
+  if (!ticket) return null;
+  try {
+    const decoded = jwt.verify(ticket, FACE_SESSION_SECRET) as any;
+    if (!decoded || typeof decoded.sid !== "number") return null;
+    return { sid: decoded.sid };
+  } catch (err) {
+    console.warn("[qrface] session ticket inválido/expirado:", err);
+    return null;
+  }
+}
+
+/**
+ * sanity check da imagem base64
  */
 function isLikelySafeDataUrl(img: string): boolean {
   if (typeof img !== "string") return false;
   if (!img.startsWith("data:image/")) return false;
-  // limite ~2MB base64 (~2.6MB real) -> ajusta se quiser
+  // ~2.6MB base64 máx
   if (img.length > 2_600_000) return false;
   return true;
 }
 
+/**
+ * Marca qualquer sessão 'pending_face' desse usuário que já estourou o tempo como 'expired'.
+ * Usa uma folga de alguns segundos pra evitar drift de relógio.
+ */
+async function expireStaleTokensForUser(userId: number) {
+  await db.query(
+    `
+      UPDATE wzb_tokens
+      SET status = 'expired'
+      WHERE user_id = ?
+        AND status = 'pending_face'
+        AND expires_at < (NOW() - INTERVAL ? SECOND)
+    `,
+    [userId, EXPIRE_GRACE_SECONDS]
+  );
+}
+
+/**
+ * true se já passou do expires_at + grace
+ */
+function isExpiredWithGrace(expires_at: any): boolean {
+  if (!expires_at) return false;
+  const expMs = new Date(expires_at).getTime();
+  const nowMs = Date.now();
+  return expMs + EXPIRE_GRACE_SECONDS * 1000 < nowMs;
+}
+
 /* =========================================================================
    POST /api/qrface
-   Chamada pelo dashboard.
-   Objetivo:
-     - garantir que existe 1 (e só 1) sessão ativa pro usuário.
-     - se já existir token pendente ou face_captured não expirado → reusar
-     - senão criar um novo token + pending_validations.
+   Chamado pelo DASHBOARD autenticado.
 
-   Retorna:
-     { success, token, url, selfie_b64?, status }
+   Fluxo:
+   - expira sessões antigas 'pending_face' do usuário
+   - tenta reusar uma sessão ativa ('pending_face' ou 'face_captured')
+   - se não tiver, cria nova linha em `wzb_tokens` e `pending_validations`
+   - gera um "sessionTicket" que contém o ID interno (sid)
+   - retorna URL pra gerar o QR
  ========================================================================= */
 export async function POST(req: NextRequest) {
   try {
+    // autenticar o usuário no dashboard
     const rawSession = getSessionCookie(req);
     const userId = getUserIdFromSessionToken(rawSession);
     if (!userId) {
@@ -83,29 +148,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Marcar como expired qualquer token pendente FACE
-    //    que já passou do expires_at e ainda está 'pending_face'
-    await db.query(
-      `
-        UPDATE wzb_tokens
-        SET status = 'expired'
-        WHERE user_id = ?
-          AND status = 'pending_face'
-          AND expires_at < NOW()
-      `,
-      [userId]
-    );
+    // expira possíveis pendentes antigos
+    await expireStaleTokensForUser(userId);
 
-    // 2. Buscar se já tem token válido (pending_face OU face_captured)
-    //    (ou seja, sessão em andamento / já capturado)
-    const [existingRows] = await db.query(
+    // tenta reusar sessão existente
+    const [activeRows] = await db.query(
       `
         SELECT
-          t.id              AS token_row_id,
-          t.token           AS token_string,
-          t.status          AS token_status,
-          t.expires_at      AS expires_at,
-          pv.selfie_b64     AS selfie_b64
+          t.id            AS token_row_id,
+          t.status        AS token_status,
+          t.expires_at    AS expires_at,
+          pv.selfie_b64   AS selfie_b64
         FROM wzb_tokens t
         LEFT JOIN pending_validations pv
           ON pv.token_id = t.id
@@ -117,50 +170,31 @@ export async function POST(req: NextRequest) {
       [userId]
     );
 
-    const existing = (existingRows as any[])[0];
+    const active = (activeRows as any[])[0];
 
-    if (existing) {
-      // se já temos selfie, dashboard já pode mostrar
-      const qrUrlExisting = `https://wyzebank.com/qrface/?wzb_token=${existing.token_string}`;
+    if (active) {
+      // gera ticket baseado no ID interno
+      const sessionTicket = signFaceSessionTicket(active.token_row_id);
+
       return NextResponse.json({
         success: true,
-        token: existing.token_string,
-        url: qrUrlExisting,
-        selfie_b64: existing.selfie_b64 || null,
-        status: existing.token_status,
+        session: sessionTicket,
+        url: `https://wyzebank.com/qrface?session=${encodeURIComponent(
+          sessionTicket
+        )}`,
+        selfie_b64: active.selfie_b64 || null,
+        status: active.token_status, // 'pending_face' ou 'face_captured'
       });
     }
 
-    // 3. criar um NOVO token porque não tem ativo válido
-    //    gerar token_string único
-    let finalToken = "";
-    for (let i = 0; i < 5; i++) {
-      const candidate = generateToken200();
-      const [dupCheck] = await db.query(
-        "SELECT token FROM wzb_tokens WHERE token = ? LIMIT 1",
-        [candidate]
-      );
-      if ((dupCheck as any[]).length === 0) {
-        finalToken = candidate;
-        break;
-      }
-    }
-    if (!finalToken) {
-      return NextResponse.json(
-        { error: "Falha ao gerar token único" },
-        { status: 500 }
-      );
-    }
-
+    // se não tem ativa → criar nova
+    const internalToken = generateInternalToken();
     const wCode = generateWCode();
 
-    // 4. inserir novo registro em wzb_tokens
-    //    status: pending_face
-    //    expires_at: 5 minutos
-    const insertResult: any = await db.query(
+    const insertRes: any = await db.query(
       `
         INSERT INTO wzb_tokens (
-          token,
+          token,        -- interno, grande, pra auditoria
           user_id,
           w_code,
           status,
@@ -169,25 +203,22 @@ export async function POST(req: NextRequest) {
           expires_at
         )
         VALUES (
-          ?,                -- token string
-          ?,                -- user_id
-          ?,                -- 6 dígitos humano
-          'pending_face',   -- status inicial
+          ?,            -- token interno randômico
+          ?,            -- user_id
+          ?,            -- w_code humano
+          'pending_face',
           NOW(),
           NULL,
-          DATE_ADD(NOW(), INTERVAL 5 MINUTE)
+          DATE_ADD(NOW(), INTERVAL ${TOKEN_LIFETIME_MIN} MINUTE)
         )
       `,
-      [finalToken, userId, wCode]
+      [internalToken, userId, wCode]
     );
 
-    // mysql2 pode retornar [result] ou direto result
-    const insertedInfo = Array.isArray(insertResult)
-      ? insertResult[0]
-      : insertResult;
-    const newTokenRowId = insertedInfo.insertId;
+    const insertedInfo = Array.isArray(insertRes) ? insertRes[0] : insertRes;
+    const newTokenRowId = insertedInfo.insertId as number;
 
-    // 5. cria linha vazia em pending_validations
+    // cria pending_validations ligada por FK token_id
     await db.query(
       `
         INSERT INTO pending_validations (
@@ -200,16 +231,18 @@ export async function POST(req: NextRequest) {
         )
         VALUES (?, ?, ?, NULL, NOW(), NOW())
       `,
-      [newTokenRowId, finalToken, wCode]
+      [newTokenRowId, internalToken, wCode]
     );
 
-    // 6. responde com URL pra montar QRCode
-    const qrUrl = `https://wyzebank.com/qrface/?wzb_token=${finalToken}`;
+    // gera ticket seguro e curto pro QR
+    const sessionTicket = signFaceSessionTicket(newTokenRowId);
 
     return NextResponse.json({
       success: true,
-      token: finalToken,
-      url: qrUrl,
+      session: sessionTicket,
+      url: `https://wyzebank.com/qrface?session=${encodeURIComponent(
+        sessionTicket
+      )}`,
       selfie_b64: null,
       status: "pending_face",
     });
@@ -223,78 +256,106 @@ export async function POST(req: NextRequest) {
 }
 
 /* =========================================================================
+   helper: pega info da sessão (sid) direto do banco
+   - usado pelo GET e pelo PUT
+ ========================================================================= */
+async function fetchSessionRowById(sessionId: number) {
+  const [rows] = await db.query(
+    `
+      SELECT 
+        t.id            AS token_id,
+        t.status        AS token_status,
+        t.expires_at    AS expires_at,
+        pv.selfie_b64   AS selfie_b64
+      FROM wzb_tokens t
+      LEFT JOIN pending_validations pv
+        ON pv.token_id = t.id
+      WHERE t.id = ?
+      LIMIT 1
+    `,
+    [sessionId]
+  );
+
+  const row = (rows as any[])[0];
+  if (!row) return null;
+
+  return {
+    token_id: row.token_id,
+    status: row.token_status,
+    expires_at: row.expires_at,
+    selfie_b64: row.selfie_b64 || null,
+  };
+}
+
+/* =========================================================================
    PUT /api/qrface
-   Chamada pelo celular depois que o usuário capturou a selfie.
-   Body:
-     { token: string, selfieDataUrl: string }
+   Chamado PELO CELULAR depois da captura.
+
+   Body: { session: string, selfieDataUrl: string }
 
    Fluxo:
-     - valida token existe
-     - valida status = 'pending_face'
-     - valida não expirado
-     - salva selfie em pending_validations
-     - marca token como 'face_captured'
+   - decodifica o ticket (JWT) → pega sid
+   - busca sessão no banco pelo ID sid
+   - se expirou e ainda tá pending_face → marca expired e bloqueia
+   - se status != pending_face → bloqueia
+   - salva selfie e marca face_captured
  ========================================================================= */
 export async function PUT(req: NextRequest) {
   try {
-    const { token, selfieDataUrl } = await req.json();
+    const { session, selfieDataUrl } = await req.json();
 
-    if (!token || !selfieDataUrl) {
+    if (!session || !selfieDataUrl) {
       return NextResponse.json(
-        { error: "token e selfieDataUrl são obrigatórios" },
+        { error: "session e selfieDataUrl são obrigatórios." },
         { status: 400 }
       );
     }
 
-    // sanity check da imagem
     if (!isLikelySafeDataUrl(selfieDataUrl)) {
       return NextResponse.json(
-        { error: "Formato de imagem inválido ou muito grande." },
+        { error: "Imagem inválida ou muito grande." },
         { status: 400 }
       );
     }
 
-    // busca token
-    const [rows] = await db.query(
-      `
-        SELECT id, status, expires_at
-        FROM wzb_tokens
-        WHERE token = ?
-        LIMIT 1
-      `,
-      [token]
-    );
-    const row = (rows as any[])[0];
-
-    if (!row) {
+    const decoded = verifyFaceSessionTicket(session);
+    if (!decoded) {
       return NextResponse.json(
-        { error: "Token inválido." },
+        { error: "Sessão inválida ou expirada." },
+        { status: 400 }
+      );
+    }
+
+    const sess = await fetchSessionRowById(decoded.sid);
+    if (!sess) {
+      return NextResponse.json(
+        { error: "Sessão não encontrada." },
         { status: 404 }
       );
     }
 
-    // expirado?
-    const expired =
-      row.expires_at && new Date(row.expires_at).getTime() < Date.now();
-    if (expired && row.status === "pending_face") {
-      // marca como expirado
+    const expired = isExpiredWithGrace(sess.expires_at);
+
+    if (expired && sess.status === "pending_face") {
+      // atualiza pra expired
       await db.query(
         `
           UPDATE wzb_tokens
           SET status = 'expired'
           WHERE id = ?
         `,
-        [row.id]
+        [sess.token_id]
       );
+
       return NextResponse.json(
-        { error: "Token expirado." },
+        { error: "Sessão expirada, gere outro QR." },
         { status: 400 }
       );
     }
 
-    if (row.status !== "pending_face") {
+    if (sess.status !== "pending_face") {
       return NextResponse.json(
-        { error: "Token já utilizado ou bloqueado." },
+        { error: "Sessão já utilizada / bloqueada." },
         { status: 400 }
       );
     }
@@ -306,17 +367,18 @@ export async function PUT(req: NextRequest) {
         SET selfie_b64 = ?, updated_at = NOW()
         WHERE token_id = ?
       `,
-      [selfieDataUrl, row.id]
+      [selfieDataUrl, sess.token_id]
     );
 
-    // marca token como face_captured
+    // marca completa
     await db.query(
       `
         UPDATE wzb_tokens
-        SET status = 'face_captured', used_at = NOW()
+        SET status = 'face_captured',
+            used_at = NOW()
         WHERE id = ?
       `,
-      [row.id]
+      [sess.token_id]
     );
 
     return NextResponse.json({
@@ -334,56 +396,54 @@ export async function PUT(req: NextRequest) {
 }
 
 /* =========================================================================
-   GET /api/qrface?token=...
-   Chamada pelo DASHBOARD em polling.
-   Retorna status atual + selfie_b64 se existir.
-   Se selfie_b64 vier preenchida, a UI troca o QR pela foto em tempo real.
+   GET /api/qrface?session=...
+   Usado tanto:
+   - pelo DASHBOARD (polling)
+   - pelo CELULAR logo que abre pra validar se a sessão é válida
+
+   Fluxo:
+   - decodifica ticket → sid
+   - consulta banco
+   - responde {status, selfie_b64}
+   - se expirou & ainda pending_face → status = "expired"
  ========================================================================= */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const token = searchParams.get("token");
+    const sessionTicket = searchParams.get("session");
 
-    if (!token) {
+    if (!sessionTicket) {
       return NextResponse.json(
-        { error: "token é obrigatório" },
+        { error: "session é obrigatório." },
         { status: 400 }
       );
     }
 
-    const [rows] = await db.query(
-      `
-        SELECT 
-          t.status        AS token_status,
-          t.expires_at    AS expires_at,
-          pv.selfie_b64   AS selfie_b64
-        FROM wzb_tokens t
-        LEFT JOIN pending_validations pv
-          ON pv.token_id = t.id
-        WHERE t.token = ?
-        LIMIT 1
-      `,
-      [token]
-    );
-
-    const row = (rows as any[])[0];
-    if (!row) {
+    const decoded = verifyFaceSessionTicket(sessionTicket);
+    if (!decoded) {
       return NextResponse.json(
-        { error: "Token não encontrado." },
+        { error: "Sessão inválida ou expirada." },
+        { status: 400 }
+      );
+    }
+
+    const sess = await fetchSessionRowById(decoded.sid);
+    if (!sess) {
+      return NextResponse.json(
+        { error: "Sessão não encontrada." },
         { status: 404 }
       );
     }
 
-    // Se já expirou e ainda está pending_face -> o dashboard pode decidir forçar re-gerar
-    const expired =
-      row.expires_at && new Date(row.expires_at).getTime() < Date.now();
+    const expiredNow = isExpiredWithGrace(sess.expires_at);
 
     return NextResponse.json({
       success: true,
-      status: expired && row.token_status === "pending_face"
-        ? "expired"
-        : row.token_status,
-      selfie_b64: row.selfie_b64 || null,
+      status:
+        expiredNow && sess.status === "pending_face"
+          ? "expired"
+          : sess.status, // pending_face | face_captured | expired | etc
+      selfie_b64: sess.selfie_b64 || null,
     });
   } catch (err: any) {
     console.error("[QRFACE GET ERROR]", err);

@@ -11,9 +11,8 @@ import { VerifyDocumentsSection } from "@/components/alert-pending";
 import data from "../dash/data.json";
 import { useAuth } from "../hooks/useAuth";
 
-// props que vêm do server (/dash/page.tsx)
 interface DashClientProps {
-  userId: number;          // <-- adicionamos isso
+  userId: number;
   userName: string;
   userEmail: string;
   userCpfOrCnpj: string;
@@ -56,19 +55,18 @@ export default function DashClient({
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 max-w-[90rem] lg:mx-auto lg:w-full lg:px-0">
-
-              {/* aviso de degradação opcional */}
+              {/* aviso degradação opcional */}
               {degraded && (
                 <div className="mx-4 lg:mx-6 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-[12px] leading-relaxed text-yellow-200">
                   Alguns dados podem estar temporariamente indisponíveis.
                 </div>
               )}
 
-              {/* BLOCO: verificação de identidade (alert + drawer) */}
+              {/* ALERTA + DRAWER (KYC) */}
               <div className="px-4 lg:px-6">
                 <VerifyDocumentsSection
                   user={{
-                    id: userId,                // <-- agora passamos o ID
+                    id: userId,
                     name: userName,
                     email: userEmail,
                     cpfOrCnpj: userCpfOrCnpj,
@@ -77,7 +75,7 @@ export default function DashClient({
                 />
               </div>
 
-              {/* cards principais do dashboard */}
+              {/* cartões principais */}
               <SectionCards />
 
               {/* gráfico */}
@@ -85,7 +83,7 @@ export default function DashClient({
                 <ChartAreaInteractive />
               </div>
 
-              {/* tabela (por ex. atividades recentes) */}
+              {/* tabela atividades */}
               <DataTable data={data} />
             </div>
           </div>
