@@ -16,25 +16,25 @@ type TokenStatus =
   | "validated";
 
 export default function QRFacePage() {
-  // DOM refs
+  // refs DOM
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // ticket curto que veio na URL (?session=...)
+  // ticket curto que veio no ?session=...
   const [sessionTicket, setSessionTicket] = useState<string | null>(null);
 
-  // status da sessão no backend
+  // status atual
   const [tokenStatus, setTokenStatus] = useState<TokenStatus>("unknown");
 
-  // selfie já capturada (server OU local)
+  // preview da selfie (se já capturada)
   const [selfiePreview, setSelfiePreview] = useState<string | null>(null);
 
-  // camera
+  // câmera
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraTryingPlay, setCameraTryingPlay] = useState(false);
 
-  // UX flags
+  // flags de permissão
   const [askingPermission, setAskingPermission] = useState(false);
   const [permissionAsked, setPermissionAsked] = useState(false);
 
@@ -42,14 +42,15 @@ export default function QRFacePage() {
   const [capturing, setCapturing] = useState(false);
   const [done, setDone] = useState(false);
 
-  // erros/user messages
+  // UX / erros
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // contador de expiração (segundos restantes dados pelo backend GET)
+  // contador de expiração (segundos até expirar)
   const [expiresInSec, setExpiresInSec] = useState<number | null>(null);
 
-  // =============== 1. bootstrap inicial ===============
-  // Lê ?session=... da URL, chama GET /api/qrface pra validar
+  // ==========================================================
+  // 1. bootstrap inicial a partir da URL
+  // ==========================================================
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
     const rawSession = sp.get("session");
@@ -84,7 +85,6 @@ export default function QRFacePage() {
           return;
         }
 
-        // mapeia status vindo da API
         const mappedStatus: TokenStatus =
           data.status === "pending_face"
             ? "pending_face"
@@ -100,13 +100,12 @@ export default function QRFacePage() {
 
         setTokenStatus(mappedStatus);
 
-        // timer de expiração
         if (typeof data.expires_in_sec === "number") {
           setExpiresInSec(data.expires_in_sec);
         }
 
-        // se o backend já tem selfie (ex: user reabriu o link depois de capturar)
         if (mappedStatus === "face_captured" && data.selfie_b64) {
+          // caso a pessoa reabra o link depois
           setSelfiePreview(data.selfie_b64);
           setDone(true);
         }
@@ -124,7 +123,10 @@ export default function QRFacePage() {
     })();
   }, []);
 
-  // =============== 1.1. countdown da expiração ===============
+  // ==========================================================
+  // 1.1. countdown local → reduz expiresInSec 1/s
+  //      quando chega em 0 e ainda não concluiu, trava
+  // ==========================================================
   useEffect(() => {
     if (expiresInSec === null) return;
     if (done) return;
@@ -148,7 +150,25 @@ export default function QRFacePage() {
     return () => clearInterval(id);
   }, [expiresInSec, done, tokenStatus]);
 
-  // =============== 2. attach stream no <video> ===============
+  // se zerou o contador e ainda tava pendente -> expira visualmente
+  useEffect(() => {
+    if (
+      expiresInSec === 0 &&
+      tokenStatus === "pending_face" &&
+      !done
+    ) {
+      setTokenStatus("expired");
+      setDone(true);
+      setErrorMsg("Esse QR expirou. Gere outro QR no app.");
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+      }
+    }
+  }, [expiresInSec, tokenStatus, done, stream]);
+
+  // ==========================================================
+  // 2. pluga o MediaStream no <video> e tenta autoplay
+  // ==========================================================
   const attachStreamToVideo = useCallback(async (media: MediaStream) => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -162,7 +182,6 @@ export default function QRFacePage() {
         .then(() => {
           setCameraReady(true);
           setCameraTryingPlay(false);
-          // limpa "toque no vídeo..." se ela tava no erro
           setErrorMsg((msg) =>
             msg ===
             "Toque no vídeo para liberar a câmera se ela estiver preta."
@@ -172,7 +191,7 @@ export default function QRFacePage() {
         })
         .catch((err) => {
           console.warn("Falha ao dar play automático:", err);
-          // iOS Safari precisa interação
+          // Safari iOS normalmente precisa interação
           setCameraReady(false);
           setCameraTryingPlay(false);
           setErrorMsg(
@@ -192,7 +211,9 @@ export default function QRFacePage() {
     }
   }, []);
 
-  // =============== 3. pedir câmera ===============
+  // ==========================================================
+  // 3. pedir acesso da câmera
+  // ==========================================================
   const requestCameraAccess = useCallback(async () => {
     if (askingPermission || capturing) return;
     if (done) return;
@@ -231,7 +252,7 @@ export default function QRFacePage() {
         });
         return mediaFront;
       } catch {
-        // fallback: qualquer câmera
+        // fallback pra qualquer câmera
       }
 
       const mediaAny = await navigator.mediaDevices.getUserMedia({
@@ -276,7 +297,9 @@ export default function QRFacePage() {
     attachStreamToVideo,
   ]);
 
-  // =============== 4. cleanup câmera ===============
+  // ==========================================================
+  // 4. cleanup câmera ao desmontar
+  // ==========================================================
   useEffect(() => {
     return () => {
       if (stream) {
@@ -285,7 +308,9 @@ export default function QRFacePage() {
     };
   }, [stream]);
 
-  // =============== 5. tentar play manual ===============
+  // ==========================================================
+  // 5. tentar play manual clicando no vídeo (iOS Safari etc)
+  // ==========================================================
   function handleManualPlay() {
     if (!videoRef.current) return;
     if (cameraReady) return;
@@ -309,7 +334,9 @@ export default function QRFacePage() {
       });
   }
 
-  // =============== 6. capturar frame e enviar ===============
+  // ==========================================================
+  // 6. capturar frame atual e enviar pro backend (PUT /api/qrface)
+  // ==========================================================
   async function handleCaptureAndSend() {
     if (done) return;
 
@@ -359,7 +386,7 @@ export default function QRFacePage() {
       return;
     }
 
-    // flip horizontal tipo espelho/selfie
+    // flip horizontal tipo selfie
     ctx.save();
     ctx.scale(-1, 1);
     ctx.drawImage(videoEl, -w, 0, w, h);
@@ -387,7 +414,7 @@ export default function QRFacePage() {
         return;
       }
 
-      // sucesso -> fixa a selfie e encerra
+      // sucesso → salva preview / trava sessão
       setSelfiePreview(data.selfiePreview || dataUrl);
       setTokenStatus("face_captured");
       setDone(true);
@@ -396,7 +423,7 @@ export default function QRFacePage() {
         setExpiresInSec(data.expires_in_sec);
       }
 
-      // corta câmera (privacidade)
+      // corta câmera
       if (stream) {
         stream.getTracks().forEach((t) => t.stop());
       }
@@ -408,7 +435,9 @@ export default function QRFacePage() {
     }
   }
 
-  // =============== 7. UI helpers ===============
+  // ==========================================================
+  // 7. helpers de UI
+  // ==========================================================
   const sessionIsClearlyInvalid =
     tokenStatus === "expired" ||
     tokenStatus === "blocked" ||
@@ -417,9 +446,12 @@ export default function QRFacePage() {
     done;
 
   const canAskCameraNow =
-    !!sessionTicket && !sessionIsClearlyInvalid && !askingPermission && !capturing;
+    !!sessionTicket &&
+    !sessionIsClearlyInvalid &&
+    !askingPermission &&
+    !capturing;
 
-  // etapa visual atual
+  // step visual atual
   const step =
     tokenStatus === "face_captured" || done
       ? 3
@@ -428,7 +460,12 @@ export default function QRFacePage() {
       : 1;
 
   function StepIndicator() {
-    function bubble(label: string, num: number, active: boolean, doneStep: boolean) {
+    function Bubble(
+      label: string,
+      num: number,
+      active: boolean,
+      doneStep: boolean
+    ) {
       return (
         <div className="flex items-center gap-2">
           <div
@@ -460,31 +497,33 @@ export default function QRFacePage() {
     }
 
     return (
-      <div className="flex items-center justify-center gap-4 text-white/80 flex-wrap">
-        {bubble("Preparar", 1, step === 1, step > 1)}
-        <div className="hidden sm:block h-[1px] w-6 bg-white/20" />
-        {bubble("Capturar", 2, step === 2, step > 2)}
-        <div className="hidden sm:block h-[1px] w-6 bg-white/20" />
-        {bubble("Concluído", 3, step === 3, step > 3)}
+      <div className="flex flex-wrap items-center justify-center gap-4 text-white/80">
+        {Bubble("Preparar", 1, step === 1, step > 1)}
+        <div className="hidden h-[1px] w-6 bg-white/20 sm:block" />
+        {Bubble("Capturar", 2, step === 2, step > 2)}
+        <div className="hidden h-[1px] w-6 bg-white/20 sm:block" />
+        {Bubble("Concluído", 3, step === 3, step > 3)}
       </div>
     );
   }
 
+  // badge pequeno "Expira em mm:ss" no topo
   function CountdownBadge() {
     if (
       expiresInSec === null ||
       done ||
       tokenStatus === "face_captured" ||
       tokenStatus === "expired"
-    )
+    ) {
       return null;
+    }
 
     const mm = Math.floor(expiresInSec / 60);
     const ss = expiresInSec % 60;
     const ssPadded = ss < 10 ? `0${ss}` : String(ss);
 
     return (
-      <div className="rounded-md border border-white/20 bg-white/5 px-2 py-1 text-[0.7rem] font-medium text-white/70 leading-none">
+      <div className="rounded-md border border-white/20 bg-white/5 px-2 py-1 text-[0.7rem] font-medium leading-none text-white/70">
         Expira em {mm}:{ssPadded}
       </div>
     );
@@ -498,8 +537,8 @@ export default function QRFacePage() {
         className="pointer-events-none absolute inset-0 flex items-center justify-center"
         aria-hidden="true"
       >
-        <div className="relative w-[220px] h-[300px]">
-          {/* moldura verde com glow */}
+        <div className="relative h-[300px] w-[220px]">
+          {/* Moldura verde com glow */}
           <div
             className="
               absolute inset-0
@@ -508,12 +547,11 @@ export default function QRFacePage() {
               shadow-[0_0_30px_rgba(38,255,89,0.55),0_0_70px_rgba(38,255,89,0.25)]
             "
           />
-          {/* vinheta escura fora do rosto */}
+          {/* vinheta escurecendo fora do rosto */}
           <div
             className="
-              absolute -inset-[100px]
+              pointer-events-none absolute -inset-[100px]
               rounded-[46%_46%_40%_40%/50%_50%_60%_60%]
-              pointer-events-none
             "
             style={{
               background:
@@ -530,7 +568,7 @@ export default function QRFacePage() {
 
     if (sessionIsClearlyInvalid && !selfiePreview) {
       return (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] text-white/90 py-2 px-3 text-center leading-snug">
+        <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 px-3 text-center text-[0.75rem] leading-snug text-white/90">
           QR inválido ou expirado. Gere outro no app.
         </div>
       );
@@ -540,7 +578,7 @@ export default function QRFacePage() {
 
     if (!permissionAsked) {
       return (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] text-white/90 py-2 px-3 leading-snug">
+        <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 px-3 text-[0.75rem] leading-snug text-white/90">
           Toque em "Ativar câmera" para começar.
         </div>
       );
@@ -548,14 +586,14 @@ export default function QRFacePage() {
 
     if (askingPermission) {
       return (
-        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] text-white/90 py-2 px-3 leading-snug">
+        <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 px-3 text-[0.75rem] leading-snug text-white/90">
           Abrindo câmera...
         </div>
       );
     }
 
     return (
-      <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-[0.75rem] text-white/90 py-2 px-3 leading-snug">
+      <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 px-3 text-[0.75rem] leading-snug text-white/90">
         {cameraTryingPlay
           ? "Tentando iniciar vídeo..."
           : "Se a tela estiver preta, toque no vídeo para liberar."}
@@ -566,13 +604,13 @@ export default function QRFacePage() {
   function renderCameraBlock() {
     if (selfiePreview) {
       return (
-        <div className="relative w-[320px] max-w-full h-[400px] rounded-2xl overflow-hidden ring-2 ring-[#26FF59]/60 shadow-[0_0_40px_#26FF5966] bg-neutral-900 flex items-center justify-center">
+        <div className="relative flex h-[400px] w-[320px] max-w-full items-center justify-center overflow-hidden rounded-2xl bg-neutral-900 ring-2 ring-[#26FF59]/60 shadow-[0_0_40px_#26FF5966]">
           <img
             src={selfiePreview}
             alt="Selfie enviada"
-            className="w-full h-full object-cover"
+            className="h-full w-full object-cover"
           />
-          <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-center text-[0.7rem] py-2 text-white font-medium">
+          <div className="absolute bottom-0 left-0 right-0 bg-black/70 py-2 text-center text-[0.7rem] font-medium text-white">
             Selfie enviada com sucesso
           </div>
         </div>
@@ -580,10 +618,10 @@ export default function QRFacePage() {
     }
 
     return (
-      <div className="relative w-[320px] max-w-full h-[400px] flex items-center justify-center rounded-2xl overflow-hidden ring-1 ring-white/10 bg-black">
+      <div className="relative flex h-[400px] w-[320px] max-w-full items-center justify-center overflow-hidden rounded-2xl bg-black ring-1 ring-white/10">
         <video
           ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover [transform:scaleX(-1)]"
+          className="absolute inset-0 h-full w-full object-cover [transform:scaleX(-1)]"
           playsInline
           autoPlay
           muted
@@ -598,7 +636,7 @@ export default function QRFacePage() {
   function renderActionArea() {
     if (selfiePreview || tokenStatus === "face_captured" || done) {
       return (
-        <div className="text-center text-[0.8rem] text-white/70 leading-relaxed px-4">
+        <div className="px-4 text-center text-[0.8rem] leading-relaxed text-white/70">
           Pronto! Já recebemos sua selfie. Você pode fechar esta tela.
         </div>
       );
@@ -606,7 +644,7 @@ export default function QRFacePage() {
 
     if (sessionIsClearlyInvalid) {
       return (
-        <div className="text-center text-[0.8rem] text-red-400 leading-relaxed px-4">
+        <div className="px-4 text-center text-[0.8rem] leading-relaxed text-red-400">
           Esse QR expirou ou não é mais válido. Gere um QR novo no app.
         </div>
       );
@@ -621,7 +659,7 @@ export default function QRFacePage() {
             "w-full rounded-md py-3 text-[0.9rem] font-semibold tracking-[-0.02em]",
             "bg-[#26FF59] text-black shadow-[0_0_20px_rgba(38,255,89,0.6)]",
             "active:scale-[0.99] transition-all",
-            "disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none",
+            "disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none",
           ].join(" ")}
         >
           {askingPermission ? "Solicitando acesso..." : "Ativar câmera"}
@@ -642,7 +680,7 @@ export default function QRFacePage() {
           "w-full rounded-md py-3 text-[0.9rem] font-semibold tracking-[-0.02em]",
           "bg-[#26FF59] text-black shadow-[0_0_20px_rgba(38,255,89,0.6)]",
           "active:scale-[0.99] transition-all",
-          "disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none",
+          "disabled:cursor-not-allowed disabled:opacity-30 disabled:shadow-none",
         ].join(" ")}
       >
         {capturing ? "Enviando..." : "Capturar e enviar"}
@@ -650,7 +688,6 @@ export default function QRFacePage() {
     );
   }
 
-  // contador formatado pra UI principal
   function renderExpiryInfo() {
     if (
       expiresInSec === null ||
@@ -660,66 +697,67 @@ export default function QRFacePage() {
     ) {
       return null;
     }
+
     const mm = Math.floor(expiresInSec / 60);
     const ss = expiresInSec % 60;
     const ssPadded = ss < 10 ? `0${ss}` : String(ss);
 
     return (
-      <div className="text-[0.7rem] text-white/50 leading-none">
+      <div className="text-[0.7rem] leading-none text-white/50">
         Esse passo expira em {mm}:{ssPadded}
       </div>
     );
   }
 
   return (
-    <main className="min-h-screen w-full flex items-center justify-center bg-[radial-gradient(circle_at_20%_20%,#1a1a1a_0%,#000000_70%)] text-white p-6">
-      <div className="w-full max-w-[22rem] flex flex-col items-center gap-6 text-center">
-        {/* topo com steps + timer */}
+    <main className="flex min-h-screen w-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,#1a1a1a_0%,#000000_70%)] p-6 text-white">
+      <div className="flex w-full max-w-[22rem] flex-col items-center gap-6 text-center">
+        {/* Steps + timer */}
         <div className="flex flex-col items-center gap-2">
           <StepIndicator />
           <CountdownBadge />
         </div>
 
-        {/* header principal */}
+        {/* Header */}
         <header className="flex flex-col gap-2">
-          <h1 className="text-[1.1rem] font-semibold text-white tracking-tight">
+          <h1 className="text-[1.1rem] font-semibold tracking-tight text-white">
             Verificação facial
           </h1>
-          <p className="text-[0.8rem] text-white/70 leading-relaxed">
+          <p className="text-[0.8rem] leading-relaxed text-white/70">
             Centralize seu rosto dentro da moldura verde.
             Quando estiver pronto, toque em{" "}
-            <strong className="text-white font-medium">Capturar</strong>.
+            <strong className="font-medium text-white">Capturar</strong>.
           </p>
         </header>
 
-        {/* bloco câmera / selfie */}
+        {/* câmera / preview da selfie */}
         {renderCameraBlock()}
 
-        {/* canvas escondido só pra captura do frame JPEG */}
+        {/* canvas offscreen pra capturar frame jpeg */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* mensagens de erro */}
+        {/* erros */}
         {errorMsg && (
-          <div className="text-red-400 text-[0.75rem] leading-relaxed px-4">
+          <div className="px-4 text-[0.75rem] leading-relaxed text-red-400">
             {errorMsg}
           </div>
         )}
 
-        {/* CTA principal */}
+        {/* botão principal */}
         {renderActionArea()}
 
-        {/* timer textual abaixo do botão, se ainda está rodando */}
+        {/* contador textual abaixo do botão */}
         {renderExpiryInfo()}
 
-        {/* nota de privacidade / instruções */}
-        <footer className="text-[0.7rem] text-white/40 text-center leading-relaxed max-w-[240px] space-y-2">
+        {/* rodapé explicando a captura */}
+        <footer className="max-w-[240px] space-y-2 text-center text-[0.7rem] leading-relaxed text-white/40">
           <div>
             Iluminação clara. Rosto totalmente visível.
             Nada cobrindo olhos, boca ou testa.
           </div>
-          <div className="text-[0.65rem] text-white/30 leading-snug">
-            A imagem é usada apenas para confirmar sua identidade
-            e proteger sua conta. Ela é transmitida de forma segura.
+          <div className="text-[0.65rem] leading-snug text-white/30">
+            A imagem é usada apenas para confirmar sua identidade e proteger
+            sua conta. Ela é transmitida de forma segura.
           </div>
         </footer>
       </div>
