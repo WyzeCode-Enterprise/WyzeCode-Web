@@ -543,7 +543,7 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={name}
-                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
+                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default select-none"
                   />
                 </div>
 
@@ -555,7 +555,7 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={cpfOrCnpj}
-                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
+                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default select-none"
                   />
                 </div>
               </div>
@@ -570,7 +570,7 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={email}
-                    className="w-full break-all rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
+                    className="w-full break-all rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default select-none"
                   />
                 </div>
 
@@ -582,7 +582,7 @@ function VerifyDocumentsDrawer({
                   <input
                     readOnly
                     value={phone}
-                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default"
+                    className="w-full rounded-md border border-neutral-800 bg-neutral-900/40 px-2 py-2 text-[13px] font-medium text-muted-foreground outline-none cursor-default select-none"
                   />
                 </div>
               </div>
