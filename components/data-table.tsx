@@ -1,6 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { cn } from "@/lib/utils"
+import Image from "next/image"
+
 import {
   closestCenter,
   DndContext,
@@ -63,15 +66,16 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import { Checkbox } from "@/components/ui/checkbox"
+
 import {
   Drawer,
-  DrawerClose,
+  DrawerTrigger,
   DrawerContent,
-  DrawerDescription,
-  DrawerFooter,
   DrawerHeader,
   DrawerTitle,
-  DrawerTrigger,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerClose,
 } from "@/components/ui/drawer"
 import {
   DropdownMenu,
@@ -650,155 +654,227 @@ const chartConfig = {
 function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
   const isMobile = useIsMobile()
 
+  // estado interno só pra UI de upload / preview
+  const [file, setFile] = React.useState<File | null>(null)
+
+  const previewUrl = React.useMemo(() => {
+    if (!file) return null
+    return URL.createObjectURL(file)
+  }, [file])
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (f) {
+      setFile(f)
+    }
+  }
+
+  function handleSubmitDocument() {
+    // aqui você faz o POST pro backend (FormData, etc)
+    console.log("Enviar documento:", file)
+  }
+
+  // dados do usuário / linha
+  const name = (item as any).name ?? "Usuário Wyze"
+  const cpf = (item as any).cpf ?? "123.456.789-00"
+  const email = (item as any).email ?? "usuario@example.com"
+  const phone = (item as any).phone ?? "+55 (11) 90000-0000"
+
   return (
     <Drawer direction={isMobile ? "bottom" : "right"}>
       <DrawerTrigger asChild>
-        <Button variant="link" className="text-foreground w-fit px-0 text-left">
+        <Button
+          variant="link"
+          className="text-foreground w-fit px-0 text-left text-[13px] font-medium underline underline-offset-2 hover:no-underline"
+        >
+          {/* antes era item.header, continua mostrando isso pra abrir */}
           {item.header}
         </Button>
       </DrawerTrigger>
-      <DrawerContent>
-        <DrawerHeader className="gap-1">
-          <DrawerTitle>{item.header}</DrawerTitle>
-          <DrawerDescription>
-            Showing total visitors for the last 6 months
+
+      <DrawerContent
+        className={cn(
+          // base container
+          "group/drawer-content bg-background fixed z-50 flex h-auto flex-col",
+          // top
+          "data-[vaul-drawer-direction=top]:inset-x-0 data-[vaul-drawer-direction=top]:top-0 data-[vaul-drawer-direction=top]:mb-24 data-[vaul-drawer-direction=top]:max-h-[80vh] data-[vaul-drawer-direction=top]:rounded-b-lg data-[vaul-drawer-direction=top]:border-b",
+          // bottom
+          "data-[vaul-drawer-direction=bottom]:inset-x-0 data-[vaul-drawer-direction=bottom]:bottom-0 data-[vaul-drawer-direction=bottom]:mt-24 data-[vaul-drawer-direction=bottom]:max-h-[80vh] data-[vaul-drawer-direction=bottom]:rounded-t-lg data-[vaul-drawer-direction=bottom]:border-t",
+          // right (mais largo que o padrão shadcn)
+          "data-[vaul-drawer-direction=right]:inset-y-0 data-[vaul-drawer-direction=right]:right-0 data-[vaul-drawer-direction=right]:w-[90vw] data-[vaul-drawer-direction=right]:border-l data-[vaul-drawer-direction=right]:sm:max-w-md data-[vaul-drawer-direction=right]:lg:max-w-lg",
+          // left (simetria)
+          "data-[vaul-drawer-direction=left]:inset-y-0 data-[vaul-drawer-direction=left]:left-0 data-[vaul-drawer-direction=left]:w-[90vw] data-[vaul-drawer-direction=left]:border-r data-[vaul-drawer-direction=left]:sm:max-w-md data-[vaul-drawer-direction=left]:lg:max-w-lg"
+        )}
+      >
+        {/* barra de arrastar (mobile) */}
+        <div className="bg-[#050505] mx-auto mt-4 hidden h-2 w-[100px] shrink-0 rounded-full group-data-[vaul-drawer-direction=bottom]/drawer-content:block" />
+
+        <DrawerHeader className="gap-1 px-4 sm:px-6">
+          <DrawerTitle className="text-base font-semibold text-foreground">
+            Verificação de Identidade
+          </DrawerTitle>
+
+          <DrawerDescription className="text-xs text-muted-foreground leading-relaxed">
+            Para liberar todos os recursos (PIX, cartão, limites maiores) você
+            precisa confirmar quem é você. Envie um documento oficial com foto.
           </DrawerDescription>
         </DrawerHeader>
-        <div className="flex flex-col gap-4 overflow-y-auto px-4 text-sm">
-          {!isMobile && (
-            <>
-              <ChartContainer config={chartConfig}>
-                <AreaChart
-                  accessibilityLayer
-                  data={chartData}
-                  margin={{
-                    left: 0,
-                    right: 10,
-                  }}
-                >
-                  <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    tickFormatter={(value) => value.slice(0, 3)}
-                    hide
-                  />
-                  <ChartTooltip
-                    cursor={false}
-                    content={<ChartTooltipContent indicator="dot" />}
-                  />
-                  <Area
-                    dataKey="mobile"
-                    type="natural"
-                    fill="var(--color-mobile)"
-                    fillOpacity={0.6}
-                    stroke="var(--color-mobile)"
-                    stackId="a"
-                  />
-                  <Area
-                    dataKey="desktop"
-                    type="natural"
-                    fill="var(--color-desktop)"
-                    fillOpacity={0.4}
-                    stroke="var(--color-desktop)"
-                    stackId="a"
-                  />
-                </AreaChart>
-              </ChartContainer>
-              <Separator />
-              <div className="grid gap-2">
-                <div className="flex gap-2 leading-none font-medium">
-                  Trending up by 5.2% this month{" "}
-                  <IconTrendingUp className="size-4" />
+
+        <div className="flex flex-col gap-4 overflow-y-auto px-4 pb-4 text-sm sm:px-6">
+          {/* BLOCO FOTO / DADOS PESSOAIS */}
+          <div className="flex items-start gap-4">
+            {/* mini-card da imagem do documento / placeholder */}
+            <div className="relative flex h-[64px] w-[64px] shrink-0 items-center justify-center overflow-hidden rounded-md bg-neutral-900 ring-1 ring-border">
+              {previewUrl ? (
+                <Image
+                  src={previewUrl}
+                  alt="Pré-visualização do documento"
+                  fill
+                  className="object-cover"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center text-[10px] leading-tight text-muted-foreground px-2 text-center select-none">
+                  <span className="font-medium text-foreground">
+                    Documento
+                  </span>
+                  <span>(frente)</span>
                 </div>
-                <div className="text-muted-foreground">
-                  Showing total visitors for the last 6 months. This is just
-                  some random text to test the layout. It spans multiple lines
-                  and should wrap around.
+              )}
+            </div>
+
+            {/* infos da conta */}
+            <div className="grid flex-1 gap-2 text-[13px] leading-relaxed">
+              <div className="flex flex-col">
+                <span className="text-muted-foreground text-[11px] uppercase tracking-wide">
+                  Nome completo
+                </span>
+                <span className="text-foreground font-medium">{name}</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col">
+                  <span className="text-muted-foreground text-[11px] uppercase tracking-wide">
+                    CPF
+                  </span>
+                  <span className="text-foreground font-medium">{cpf}</span>
+                </div>
+
+                <div className="flex flex-col">
+                  <span className="text-muted-foreground text-[11px] uppercase tracking-wide">
+                    Telefone
+                  </span>
+                  <span className="text-foreground font-medium">{phone}</span>
                 </div>
               </div>
-              <Separator />
-            </>
-          )}
-          <form className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3">
-              <Label htmlFor="header">Header</Label>
-              <Input id="header" defaultValue={item.header} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-3">
-                <Label htmlFor="type">Type</Label>
-                <Select defaultValue={item.type}>
-                  <SelectTrigger id="type" className="w-full">
-                    <SelectValue placeholder="Select a type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Table of Contents">
-                      Table of Contents
-                    </SelectItem>
-                    <SelectItem value="Executive Summary">
-                      Executive Summary
-                    </SelectItem>
-                    <SelectItem value="Technical Approach">
-                      Technical Approach
-                    </SelectItem>
-                    <SelectItem value="Design">Design</SelectItem>
-                    <SelectItem value="Capabilities">Capabilities</SelectItem>
-                    <SelectItem value="Focus Documents">
-                      Focus Documents
-                    </SelectItem>
-                    <SelectItem value="Narrative">Narrative</SelectItem>
-                    <SelectItem value="Cover Page">Cover Page</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-3">
-                <Label htmlFor="status">Status</Label>
-                <Select defaultValue={item.status}>
-                  <SelectTrigger id="status" className="w-full">
-                    <SelectValue placeholder="Select a status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Done">Done</SelectItem>
-                    <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Not Started">Not Started</SelectItem>
-                  </SelectContent>
-                </Select>
+
+              <div className="flex flex-col">
+                <span className="text-muted-foreground text-[11px] uppercase tracking-wide">
+                  E-mail
+                </span>
+                <span className="text-foreground font-medium break-all">
+                  {email}
+                </span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-3">
-                <Label htmlFor="target">Target</Label>
-                <Input id="target" defaultValue={item.target} />
-              </div>
-              <div className="flex flex-col gap-3">
-                <Label htmlFor="limit">Limit</Label>
-                <Input id="limit" defaultValue={item.limit} />
-              </div>
+          </div>
+
+          <Separator />
+
+          {/* ÁREA DE UPLOAD */}
+          <div className="grid gap-2">
+            <label
+              htmlFor="document-upload"
+              className="text-[13px] font-medium text-foreground"
+            >
+              Envie a foto do seu documento
+            </label>
+
+            <div className="text-[12px] leading-snug text-muted-foreground">
+              Aceitamos RG, CNH ou passaporte. Precisa estar legível e inteiro.
             </div>
-            <div className="flex flex-col gap-3">
-              <Label htmlFor="reviewer">Reviewer</Label>
-              <Select defaultValue={item.reviewer}>
-                <SelectTrigger id="reviewer" className="w-full">
-                  <SelectValue placeholder="Select a reviewer" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
-                  <SelectItem value="Jamik Tashpulatov">
-                    Jamik Tashpulatov
-                  </SelectItem>
-                  <SelectItem value="Emily Whalen">Emily Whalen</SelectItem>
-                </SelectContent>
-              </Select>
+
+            <label
+              htmlFor="document-upload"
+              className={cn(
+                "group relative flex w-full flex-col items-center justify-center rounded-md border border-dashed border-neutral-700/80 bg-neutral-950/40 px-4 py-8 text-center",
+                "hover:bg-neutral-900/40 hover:border-neutral-500/80 transition-colors cursor-pointer"
+              )}
+            >
+              {previewUrl ? (
+                <div className="relative h-[140px] w-full overflow-hidden rounded-sm ring-1 ring-border bg-black">
+                  <Image
+                    src={previewUrl}
+                    alt="Pré-visualização do documento"
+                    fill
+                    className="object-contain"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-neutral-800/60 text-[11px] font-semibold text-foreground ring-1 ring-border">
+                    JPG
+                  </div>
+                  <div className="flex flex-col gap-1 text-[12px] leading-tight">
+                    <span className="text-foreground font-medium">
+                      Arraste ou clique para enviar
+                    </span>
+                    <span className="text-muted-foreground">
+                      PNG, JPG, PDF — máx 10MB
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <input
+                id="document-upload"
+                type="file"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+            </label>
+
+            <div className="text-[11px] text-muted-foreground leading-relaxed">
+              • Foto bem iluminada
+              <br />
+              • Documento sem corte
+              <br />
+              • Nada cobrindo os dados
             </div>
-          </form>
+          </div>
+
+          <Separator />
+
+          {/* AVISO LEGAL */}
+          <div className="rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3">
+            <p className="text-[12px] font-medium text-yellow-400 leading-relaxed">
+              Importante
+            </p>
+            <p className="text-[12px] text-yellow-200/80 leading-relaxed">
+              Seu documento é usado apenas para validação da conta e prevenção
+              a fraude. Seus dados são criptografados e nunca ficam públicos.
+            </p>
+          </div>
         </div>
-        <DrawerFooter>
-          <Button>Submit</Button>
+
+        <DrawerFooter className="gap-2 px-4 pb-4 pt-0 sm:px-6">
+          <Button
+            size="sm"
+            className="w-full bg-yellow-400 text-black hover:bg-yellow-300 font-semibold text-[13px]"
+            onClick={handleSubmitDocument}
+            disabled={!file}
+          >
+            Enviar documento
+          </Button>
+
           <DrawerClose asChild>
-            <Button variant="outline">Done</Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full text-[13px]"
+            >
+              Cancelar
+            </Button>
           </DrawerClose>
         </DrawerFooter>
       </DrawerContent>
