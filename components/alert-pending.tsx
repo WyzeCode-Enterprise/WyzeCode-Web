@@ -87,16 +87,38 @@ function removeBackFromLocalStorage() {
 -------------------------------------------------- */
 function AlertPendingSkeleton() {
   return (
-    <section className="w-full rounded-md border border-yellow-400/10 bg-[#0a0a0a] p-4 sm:p-5">
-      <div className="animate-pulse space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="h-5 w-28 rounded-full bg-yellow-500/10" />
-          <div className="h-4 w-24 rounded-full bg-yellow-500/10" />
+    <section
+      className="relative w-full h-35 rounded-md bg-[#050505] p-4 sm:p-5"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <div className="flex flex-col gap-4 sm:gap-1 text-left sm:pr-40">
+        <div className="flex flex-col gap-1 text-left sm:pr-40">
+          {/* linha das “chips” */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="h-5 w-28 rounded-full bg-yellow-500/10 animate-pulse" />
+            <div className="h-4 w-24 rounded-full bg-yellow-500/10 animate-pulse" />
+          </div>
+
+          {/* “título” */}
+          <div className="mt-2 h-4 w-2/3 rounded bg-yellow-500/10 animate-pulse" />
+
+          {/* parágrafos */}
+          <div className="mt-2 space-y-2">
+            <div className="h-4 w-full rounded bg-yellow-500/10 animate-pulse" />
+            <div className="h-4 w-5/6 rounded bg-yellow-500/10 animate-pulse" />
+          </div>
         </div>
-        <div className="h-4 w-2/3 rounded bg-yellow-500/10" />
-        <div className="h-4 w-full rounded bg-yellow-500/10" />
-        <div className="h-4 w-5/6 rounded bg-yellow-500/10" />
-        <div className="mt-4 h-9 w-40 rounded bg-yellow-500/10 ml-auto" />
+
+        {/* botão (mobile) */}
+        <div className="sm:hidden mt-2">
+          <div className="h-9 w-full rounded-md bg-yellow-500/10 animate-pulse" />
+        </div>
+      </div>
+
+      {/* botão (desktop, canto inferior direito) */}
+      <div className="hidden sm:block absolute bottom-4 right-4">
+        <div className="h-9 w-40 rounded-md bg-yellow-500/10 animate-pulse" />
       </div>
     </section>
   );
@@ -1004,7 +1026,7 @@ export function VerifyDocumentsSection({
         user={user}
         lockedFromServer={inReview}
         onSubmitted={() => {
-          setInReview(true); 
+          setInReview(true); // trava alerta e mantém confirmação inline
         }}
       />
     </>
