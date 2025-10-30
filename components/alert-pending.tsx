@@ -96,29 +96,29 @@ function AlertPendingSkeleton() {
         <div className="flex flex-col gap-1 text-left sm:pr-40">
           {/* linha das “chips” */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="h-5 w-28 rounded-full bg-yellow-500/10 animate-pulse" />
-            <div className="h-4 w-24 rounded-full bg-yellow-500/10 animate-pulse" />
+            <div className="h-5 w-28 rounded-full bg-[#1E1E1E]/20 animate-pulse" />
+            <div className="h-4 w-24 rounded-full bg-[#1E1E1E]/20 animate-pulse" />
           </div>
 
           {/* “título” */}
-          <div className="mt-2 h-4 w-2/3 rounded bg-yellow-500/10 animate-pulse" />
+          <div className="mt-2 h-4 w-2/3 rounded bg-[#1E1E1E]/20 animate-pulse" />
 
           {/* parágrafos */}
           <div className="mt-2 space-y-2">
-            <div className="h-4 w-full rounded bg-yellow-500/10 animate-pulse" />
-            <div className="h-4 w-5/6 rounded bg-yellow-500/10 animate-pulse" />
+            <div className="h-4 w-full rounded bg-[#1E1E1E]/20 animate-pulse" />
+            <div className="h-4 w-5/6 rounded bg-[#1E1E1E]/20 animate-pulse" />
           </div>
         </div>
 
         {/* botão (mobile) */}
         <div className="sm:hidden mt-2">
-          <div className="h-9 w-full rounded-md bg-yellow-500/10 animate-pulse" />
+          <div className="h-9 w-full rounded-md bg-[#1E1E1E]/20 animate-pulse" />
         </div>
       </div>
 
       {/* botão (desktop, canto inferior direito) */}
       <div className="hidden sm:block absolute bottom-4 right-4">
-        <div className="h-9 w-40 rounded-md bg-yellow-500/10 animate-pulse" />
+        <div className="h-9 w-40 rounded-md bg-[#1E1E1E]/20 animate-pulse" />
       </div>
     </section>
   );
