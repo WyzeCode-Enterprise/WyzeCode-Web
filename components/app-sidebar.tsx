@@ -57,8 +57,8 @@ export function AppSidebar({ userName, userEmail, ...props }: AppSidebarProps) {
   url: "#",
   icon: PieChart,
   items: [
-    { title: "Visão Geral", url: "#" },
-    { title: "Atividades Recentes", url: "#" },
+    { title: "Visão Geral", url: "/dash" },
+    { title: "Atividades Recentes", url: "/dash/recent-activities" },
     { title: "Notificações", url: "#" },
   ],
 },

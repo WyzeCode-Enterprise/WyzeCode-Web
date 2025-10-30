@@ -8,8 +8,8 @@ import { SectionCards } from "@/components/section-cards";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { VerifyDocumentsSection } from "@/components/alert-pending";
-import data from "../dash/data.json";
-import { useAuth } from "../hooks/useAuth";
+import data from "../../dash/data.json";
+import { useAuth } from "../../hooks/useAuth";
 
 interface DashClientProps {
   userId: number;

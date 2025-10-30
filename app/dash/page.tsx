@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "../api/db";
 import jwt from "jsonwebtoken";
-import DashClient from "../api/DashClient";
+import DashClient from "../api/Dashboard-pages/DashMain";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";

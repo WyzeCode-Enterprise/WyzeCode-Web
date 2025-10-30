@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
-
 import { cn } from "@/lib/utils"
 
 function Drawer({
@@ -37,7 +36,9 @@ function DrawerOverlay({
     <DrawerPrimitive.Overlay
       data-slot="drawer-overlay"
       className={cn(
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50",
+        "fixed inset-0 z-50 bg-black/50",
+        "data-[state=open]:animate-in data-[state=open]:fade-in-0",
+        "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
         className
       )}
       {...props}
@@ -45,34 +46,58 @@ function DrawerOverlay({
   )
 }
 
+type DrawerContentProps = React.ComponentProps<typeof DrawerPrimitive.Content> & {
+  /** Título acessível (não visível) usado por padrão */
+  srTitle?: string
+  /** Desativa a inserção automática do Title sr-only */
+  disableAutoTitle?: boolean
+}
+
 function DrawerContent({
   className,
   children,
+  srTitle = "Conteúdo do painel",
+  disableAutoTitle = false,
   ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Content>) {
+}: DrawerContentProps) {
+  // Garante acessibilidade: se não vier aria-label, definimos um padrão.
+  const contentProps = {
+    "aria-label": (props as any)?.["aria-label"] ?? srTitle,
+    ...props
+  } as React.ComponentProps<typeof DrawerPrimitive.Content> & { "aria-label"?: string }
+
   return (
-   <DrawerPortal data-slot="drawer-portal">
-  <DrawerOverlay />
-  <DrawerPrimitive.Content
-    data-slot="drawer-content"
-    className={cn(
-      "group/drawer-content bg-background fixed z-50 flex h-auto flex-col",
-      "data-[vaul-drawer-direction=top]:inset-x-0 data-[vaul-drawer-direction=top]:top-0 data-[vaul-drawer-direction=top]:mb-24 data-[vaul-drawer-direction=top]:max-h-[80vh] data-[vaul-drawer-direction=top]:rounded-b-lg data-[vaul-drawer-direction=top]:border-b",
-      "data-[vaul-drawer-direction=bottom]:inset-x-0 data-[vaul-drawer-direction=bottom]:bottom-0 data-[vaul-drawer-direction=bottom]:mt-24 data-[vaul-drawer-direction=bottom]:max-h-[80vh] data-[vaul-drawer-direction=bottom]:rounded-t-lg data-[vaul-drawer-direction=bottom]:border-t",
+    <DrawerPortal>
+      <DrawerOverlay />
+      <DrawerPrimitive.Content
+        data-slot="drawer-content"
+        className={cn(
+          "group/drawer-content bg-background fixed z-50 flex h-auto flex-col",
+          // top
+          "data-[vaul-drawer-direction=top]:inset-x-0 data-[vaul-drawer-direction=top]:top-0 data-[vaul-drawer-direction=top]:mb-24 data-[vaul-drawer-direction=top]:max-h-[80vh] data-[vaul-drawer-direction=top]:rounded-b-lg data-[vaul-drawer-direction=top]:border-b",
+          // bottom
+          "data-[vaul-drawer-direction=bottom]:inset-x-0 data-[vaul-drawer-direction=bottom]:bottom-0 data-[vaul-drawer-direction=bottom]:mt-24 data-[vaul-drawer-direction=bottom]:max-h-[80vh] data-[vaul-drawer-direction=bottom]:rounded-t-lg data-[vaul-drawer-direction=bottom]:border-t",
+          // right (largura ajustada)
+          "data-[vaul-drawer-direction=right]:inset-y-0 data-[vaul-drawer-direction=right]:right-0 data-[vaul-drawer-direction=right]:w-[90vw] data-[vaul-drawer-direction=right]:border-l data-[vaul-drawer-direction=right]:sm:max-w-md data-[vaul-drawer-direction=right]:lg:max-w-lg",
+          // left (largura ajustada)
+          "data-[vaul-drawer-direction=left]:inset-y-0 data-[vaul-drawer-direction=left]:left-0 data-[vaul-drawer-direction=left]:w-[90vw] data-[vaul-drawer-direction=left]:border-r data-[vaul-drawer-direction=left]:sm:max-w-md data-[vaul-drawer-direction=left]:lg:max-w-lg",
+          className
+        )}
+        {...contentProps}
+      >
+        {/* handle/grabber */}
+        <div className="bg-[#050505] mx-auto mt-4 hidden h-2 w-[100px] shrink-0 rounded-full group-data-[vaul-drawer-direction=bottom]/drawer-content:block" />
 
-      // ⬇⬇ AQUI eu só troquei largura
-      "data-[vaul-drawer-direction=right]:inset-y-0 data-[vaul-drawer-direction=right]:right-0 data-[vaul-drawer-direction=right]:w-[90vw] data-[vaul-drawer-direction=right]:border-l data-[vaul-drawer-direction=right]:sm:max-w-md data-[vaul-drawer-direction=right]:lg:max-w-lg",
+        {/* Title invisível para leitores de tela (evita o warning do Radix) */}
+        {!disableAutoTitle && (
+          <DrawerPrimitive.Title className="sr-only">
+            {srTitle}
+          </DrawerPrimitive.Title>
+        )}
 
-      "data-[vaul-drawer-direction=left]:inset-y-0 data-[vaul-drawer-direction=left]:left-0 data-[vaul-drawer-direction=left]:w-[90vw] data-[vaul-drawer-direction=left]:border-r data-[vaul-drawer-direction=left]:sm:max-w-md data-[vaul-drawer-direction=left]:lg:max-w-lg",
-      className
-    )}
-    {...props}
-  >
-    <div className="bg-[#050505] mx-auto mt-4 hidden h-2 w-[100px] shrink-0 rounded-full group-data-[vaul-drawer-direction=bottom]/drawer-content:block" />
-    {children}
-  </DrawerPrimitive.Content>
-</DrawerPortal>
-
+        {children}
+      </DrawerPrimitive.Content>
+    </DrawerPortal>
   )
 }
 
@@ -81,7 +106,9 @@ function DrawerHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="drawer-header"
       className={cn(
-        "flex flex-col gap-0.5 p-4 group-data-[vaul-drawer-direction=bottom]/drawer-content:text-center group-data-[vaul-drawer-direction=top]/drawer-content:text-center md:gap-1.5 md:text-left",
+        "flex flex-col gap-0.5 p-4 md:gap-1.5",
+        "group-data-[vaul-drawer-direction=bottom]/drawer-content:text-center",
+        "group-data-[vaul-drawer-direction=top]/drawer-content:text-center md:text-left",
         className
       )}
       {...props}
