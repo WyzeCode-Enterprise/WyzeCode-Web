@@ -320,7 +320,7 @@ export async function POST(req: NextRequest) {
       return jsonNoStore({
         success: true,
         session: sessionTicket,
-        url: `https://wyzebank.com/qrface?session=${encodeURIComponent(
+        url: `https://www.wyzebank.com/qrface?session=${encodeURIComponent(
           sessionTicket
         )}`,
         selfie_b64: sess.selfie_b64 || null,
@@ -390,7 +390,7 @@ export async function POST(req: NextRequest) {
     return jsonNoStore({
       success: true,
       session: sessionTicket,
-      url: `https://wyzebank.com/qrface?session=${encodeURIComponent(
+      url: `https://www.wyzebank.com/qrface?session=${encodeURIComponent(
         sessionTicket
       )}`,
       selfie_b64: null,
@@ -633,7 +633,7 @@ export async function DELETE(req: NextRequest) {
     return jsonNoStore({
       success: true,
       session: sessionTicket,
-      url: `https://wyzebank.com/qrface?session=${encodeURIComponent(
+      url: `https://www.wyzebank.com/qrface?session=${encodeURIComponent(
         sessionTicket
       )}`,
       selfie_b64: null,
