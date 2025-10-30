@@ -144,11 +144,16 @@ export function AlertPending({
         className || ""
       )}
     >
-      {locked && (
-        <div className="absolute right-4 top-3 rounded-md border border-yellow-400/40 bg-yellow-500/10 px-2 py-[3px] text-[11px] font-semibold text-yellow-400">
-          Seus documentos estão em validação
-        </div>
-      )}
+{locked && (
+  <div className="absolute right-4 top-3 flex flex-col items-end gap-1">
+    <div className="rounded-md border border-yellow-400/40 bg-yellow-500/10 px-2 py-[3px] text-[11px] font-semibold text-yellow-400">
+      Seus documentos estão em processo de validação
+    </div>
+    <p className="max-w-[240px] text-right text-[12px] leading-tight text-yellow-400/70">
+      Esse processo pode levar de 3 a 5 dias úteis.
+    </p>
+  </div>
+)}
 
       <div className="flex flex-col gap-4 sm:gap-1 text-left sm:pr-40">
         <div className="flex flex-col gap-1 text-left sm:pr-40">
