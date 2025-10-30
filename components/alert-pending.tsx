@@ -368,7 +368,7 @@ function UploadModal({
             {frontPreview ? (
               <div className="relative h-[200px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
                 <img src={frontPreview} alt="Frente documento" className="absolute inset-0 h-full w-full object-contain" />
-                <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                <div className="absolute inset-x-0 top-0 z-10 flex justify-end px-2 py-2">
                   <button
                     type="button"
                     onClick={handleRemoveFrontClick}
@@ -413,7 +413,7 @@ function UploadModal({
             {backPreview ? (
               <div className="relative h-[200px] w-full overflow-hidden rounded-md bg-black ring-1 ring-border">
                 <img src={backPreview} alt="Verso documento" className="absolute inset-0 h-full w-full object-contain" />
-                <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                <div className="absolute inset-x-0 top-0 z-10 flex justify-end px-2 py-2">
                   <button
                     type="button"
                     onClick={handleRemoveBackClick}
@@ -480,16 +480,16 @@ function UploadModal({
 -------------------------------------------------- */
 function InlineConfirmation() {
   return (
-    <div className="flex min-h-[60vh] items-center justify-center">
-      <div className="w-full max-w-[520px] rounded-xl border border-neutral-800 bg-[#0b0b0b] p-6 text-center shadow-2xl">
+    <div className="flex min-h-[100vh] items-center justify-center">
+      <div className="w-full max-w-[520px] rounded-xl p-6 text-center shadow-2xl">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#26FF59]/20">
           <svg viewBox="0 0 24 24" className="h-9 w-9" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
             <path d="M20 6L9 17l-5-5" className="text-[#26FF59]" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
 
-        <h3 className="text-lg font-semibold text-white">Documentos enviados</h3>
-        <p className="mt-2 text-sm leading-relaxed text-white/70">
+        <h3 className="text-[25px] font-semibold text-white">Documentos enviados</h3>
+        <p className="mt-2 text-[16px] leading-relaxed text-white/70">
           Seus documentos foram enviados com sucesso e estão em análise.
           O processo pode levar de <strong>3 a 5 dias úteis</strong>.
         </p>
@@ -805,7 +805,7 @@ function VerifyDocumentsDrawer({
                           {frontConfirmed ? (
                             <>
                               <img src={frontConfirmed} alt="Frente confirmada" className="absolute inset-0 h-full w-full object-contain" />
-                              <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                              <div className="absolute inset-x-0 top-0 z-10 flex justify-end px-2 py-2">
                                 <button
                                   type="button"
                                   onClick={handleRemoveFront}
@@ -829,7 +829,7 @@ function VerifyDocumentsDrawer({
                           {backConfirmed ? (
                             <>
                               <img src={backConfirmed} alt="Verso confirmada" className="absolute inset-0 h-full w-full object-contain" />
-                              <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                              <div className="absolute inset-x-0 top-0 z-10 flex justify-end px-2 py-2">
                                 <button
                                   type="button"
                                   onClick={handleRemoveBack}
@@ -886,7 +886,7 @@ function VerifyDocumentsDrawer({
 
                       {/* Erro */}
                       {qrError && !selfiePreview && (
-                        <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md bg-neutral-800 px-4 text-center text-[11px] font-semibold leading-relaxed text-red-400 ring-1 ring-border">
+                        <div className="flex h-[200px] w-[200px] items-center justify-center rounded-md px-4 text-center text-[11px] font-semibold leading-relaxed text-red-400 ring-1 ring-border">
                           {qrError}
                         </div>
                       )}
@@ -895,7 +895,7 @@ function VerifyDocumentsDrawer({
                       {selfiePreview && (
                         <div className="relative h-[200px] w-[200px] overflow-hidden rounded-md bg-neutral-900 ring-2 ring-[#26FF59]/60 shadow-[0_0_40px_#26FF5966]">
                           <img src={selfiePreview} alt="Selfie capturada" className="absolute inset-0 h-full w-full object-cover" />
-                          <div className="absolute inset-x-0 top-0 z-10 flex justify-end bg-black/60 px-2 py-2">
+                          <div className="absolute inset-x-0 top-0 z-10 flex justify-end px-2 py-2">
                             <button
                               type="button"
                               onClick={handleRemoveSelfie}
@@ -904,9 +904,6 @@ function VerifyDocumentsDrawer({
                             >
                               ✕
                             </button>
-                          </div>
-                          <div className="absolute inset-x-0 bottom-0 z-10 bg-black/70 py-2 text-center text-[0.7rem] font-medium text-white">
-                            Selfie enviada com sucesso
                           </div>
                         </div>
                       )}
