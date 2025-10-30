@@ -149,7 +149,7 @@ export function AlertPending({
     <div className="rounded-md border border-yellow-400/40 bg-yellow-500/10 px-2 py-[3px] text-[11px] font-semibold text-yellow-400">
       Seus documentos estão em processo de validação
     </div>
-    <p className="max-w-[240px] text-right text-[12px] leading-tight text-yellow-400/70">
+    <p className="max-w-[250px] text-right text-[12.5px] leading-tight text-yellow-400/70">
       Esse processo pode levar de 3 a 5 dias úteis.
     </p>
   </div>
