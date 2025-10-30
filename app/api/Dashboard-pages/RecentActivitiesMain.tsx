@@ -690,17 +690,17 @@ function AIPalette({
                                     }
                                 }}
                             />
-                            {query.length > 0 && (
-                                <button
-                                    type="button"
-                                    aria-label="Limpar texto"
-                                    title="Limpar texto"
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-[3px] border border-white/10 px-2 py-[3px] text-xs text-white/70 hover:bg-white/5"
-                                    onClick={() => setQuery("")} // ⬅️ X dentro do modal
-                                >
-                                    ×
-                                </button>
-                            )}
+{query.length > 0 && (
+  <button
+    type="button"
+    aria-label="Limpar texto"
+    title="Limpar texto"
+    onClick={() => setQuery("")}
+    className="absolute right-2 top-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded-[7px] border border-white/10 text-xs text-white/70 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-white/20"
+  >
+    <span aria-hidden className="leading-none">×</span>
+  </button>
+)}
                         </div>
 
                         {/* Chips dos filtros compreendidos */}
@@ -1064,7 +1064,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                                             {/* ⬅️ Direita do “input” centralizado: se houver busca ativa, mostra X; senão mostra “Ctrl + K” */}
                                             {(selectedId != null || !!effectiveQuery) ? (
                                                 <span
-                                                    className="ml-2 rounded-md border border-white/10 px-2 py-[2px] text-[11px] text-white/70 hover:bg-white/5"
+                                                    className="absolute right-4 top-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded-[7px] border border-white/10 text-xs text-white/70 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-white/20"
                                                     title="Limpar busca"
                                                     onClick={(e) => { e.stopPropagation(); clearSearch(); }} // ⬅️ não abre o modal
                                                 >
@@ -1189,25 +1189,18 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                                     </div>
                                 )}
 
-{!loading && !error && displayedItems.length === 0 && (
-  <div className="py-16">
-    <div className="flex flex-col items-center justify-center text-center">
-      <img src="./error_image.png" alt="" className="h-14 w-14 text-white/30" />
+                                {!loading && !error && displayedItems.length === 0 && (
+                                    <div className="py-16">
+                                        <div className="flex flex-col items-center justify-center text-center">
+                                            <img src="https://www.wyzebank.com/error_image.png" alt="" className="h-70 text-white/30" />
 
-      {/* texto embaixo */}
-      <p className="mt-3 text-sm text-white/60">
-        Nenhuma atividade encontrada.
-      </p>
-    </div>
-  </div>
-)}
-
-
-
-
-
-
-
+                                            {/* texto embaixo */}
+                                            <p className="mt-3 text-[17px] text-white/30 fonte-medium user-none">
+                                                Nenhuma atividade encontrada.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {!loading && !error && displayedItems.length > 0 && (
                                     <LayoutGroup id="activities">
@@ -1324,23 +1317,23 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                                                                                         <div className="truncate"><span className="text-white/50">Device:</span> <Copyable text={it.device_id}>{maskId(it.device_id)}</Copyable></div>
 
                                                                                         {/* Segurança & risco */}
-<div className="flex flex-wrap items-center gap-2">
-  <span className="text-white/50">KYC:</span> <Badge>{it.kyc_level || "—"}</Badge>
-  <RiskPill score={it.risk_score} />
+                                                                                        <div className="flex flex-wrap items-center gap-2">
+                                                                                            <span className="text-white/50">KYC:</span> <Badge>{it.kyc_level || "—"}</Badge>
+                                                                                            <RiskPill score={it.risk_score} />
 
-  {(() => {
-    const flags = Array.isArray(it.risk_flags) ? it.risk_flags as string[] : [];
-    if (flags.length === 0) return null;
-    return (
-      <div className="flex flex-wrap gap-1">
-        {flags.slice(0, 4).map((f) => (
-          <Badge key={f}>{f}</Badge>
-        ))}
-        {flags.length > 4 && <Badge>+{flags.length - 4}</Badge>}
-      </div>
-    );
-  })()}
-</div>
+                                                                                            {(() => {
+                                                                                                const flags = Array.isArray(it.risk_flags) ? it.risk_flags as string[] : [];
+                                                                                                if (flags.length === 0) return null;
+                                                                                                return (
+                                                                                                    <div className="flex flex-wrap gap-1">
+                                                                                                        {flags.slice(0, 4).map((f) => (
+                                                                                                            <Badge key={f}>{f}</Badge>
+                                                                                                        ))}
+                                                                                                        {flags.length > 4 && <Badge>+{flags.length - 4}</Badge>}
+                                                                                                    </div>
+                                                                                                );
+                                                                                            })()}
+                                                                                        </div>
 
 
                                                                                         {/* Origem & ambiente */}
