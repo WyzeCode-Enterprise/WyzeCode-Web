@@ -355,7 +355,7 @@ function UploadModal({
       role="dialog"
     >
       <div
-        className="flex w-full max-w-[800px] flex-col gap-4 rounded-md border border-neutral-800 bg-[#0a0a0a] p-5 shadow-xl"
+        className="flex w-full max-w-[800px] flex-col gap-4 rounded-md border border-neutral-800 bg-[#050505] p-5 shadow-xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex flex-col gap-1">
@@ -469,7 +469,7 @@ function UploadModal({
 
           <Button
             variant="outline"
-            className="w-full cursor-pointer bg-[#0A0A0A] py-[1.375rem] text-[15px] font-semibold"
+            className="w-full cursor-pointer bg-[#050505] py-[1.375rem] text-[15px] font-semibold"
             onClick={onClose}
           >
             Cancelar
