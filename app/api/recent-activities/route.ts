@@ -12,10 +12,10 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 const MIN_PAGE_SIZE = 5;
 const MAX_PAGE_SIZE = 100;
-const MAX_OFFSET = 10_000;            // evita scans muito grandes
-const MAX_Q_LEN = 100;                // limita custo de LIKE
-const QUERY_TIMEOUT_MS = 2500;        // timeout por query
-const RETRIES = 1;                    // 1 retry leve em falhas transitórias
+const MAX_OFFSET = 10_000;
+const MAX_Q_LEN = 100;
+const QUERY_TIMEOUT_MS = 2500;
+const RETRIES = 1;
 const BACKOFF_MS = 80;
 
 function requireUserIdFromCookie(req: NextRequest): number {
@@ -38,13 +38,11 @@ function clamp(n: number, min: number, max: number) {
 }
 
 function isValidDateISO(d: string): boolean {
-  // YYYY-MM-DD
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
   const dt = new Date(`${d}T00:00:00Z`);
   return !isNaN(dt.getTime());
 }
 
-// Timeout helper (não cancela no driver, mas evita pendurar a rota)
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout;
   const timeout = new Promise<never>((_, reject) => {
@@ -58,12 +56,10 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   }
 }
 
-// Retry leve para falhas transitórias (ER_LOCK_DEADLOCK, pool reset, etc.)
 async function queryWithRetry<T = any[]>(sql: string, params: any[], retries = RETRIES): Promise<[T, any]> {
   let lastErr: any;
   for (let i = 0; i <= retries; i++) {
     try {
-      // importante: cada tentativa com timeout
       // @ts-ignore
       return await withTimeout(db.query(sql, params), QUERY_TIMEOUT_MS);
     } catch (err: any) {
@@ -84,7 +80,6 @@ export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const requestId = randomUUID();
 
-  // Headers padrão pro response
   const baseHeaders = {
     "cache-control": "no-store",
     "x-request-id": requestId,
@@ -94,19 +89,68 @@ export async function GET(req: NextRequest) {
     const userId = requireUserIdFromCookie(req);
     const url = new URL(req.url);
 
+    const at = (url.searchParams.get("at") || "").trim();
+    const idParam = url.searchParams.get("id");
+
+    // Se veio ?at= (token fixo), devolvemos apenas aquele registro (do usuário),
+    // ignorando paginação/filtros e já incluindo o campo at_token no payload.
+    if (at) {
+      // sanity check básico (UUID v4) — aceita minúsculas/maiúsculas
+      const uuidRe = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+      if (!uuidRe.test(at)) {
+        return NextResponse.json(
+          {
+            page: 1,
+            pageSize: 1,
+            total: 0,
+            items: [],
+            hasNextPage: false,
+            meta: { degraded: false, estimate: false, requestId, durationMs: Date.now() - startedAt },
+          },
+          { headers: baseHeaders }
+        );
+      }
+
+      const [rows] = await queryWithRetry<any[]>(
+        `
+          /* recent-activities:by_at v1 */
+          SELECT id, at_token, type, status, description, amount_cents, currency, source, ip, user_agent, icon_url, created_at
+            FROM user_activity_log
+           WHERE user_id = ? AND at_token = ?
+           LIMIT 1
+        `,
+        [userId, at]
+      );
+
+      const items = Array.isArray(rows) ? rows : [];
+      const duration = Date.now() - startedAt;
+      return NextResponse.json(
+        {
+          page: 1,
+          pageSize: 1,
+          total: items.length,
+          items,
+          hasNextPage: false,
+          nextPage: null,
+          meta: { degraded: false, estimate: false, requestId, durationMs: duration },
+        },
+        { headers: baseHeaders }
+      );
+    }
+
+    // Paginação normal
     const page = Math.max(1, Number(url.searchParams.get("page") || DEFAULT_PAGE));
     const pageSizeRaw = Number(url.searchParams.get("pageSize") || DEFAULT_PAGE_SIZE);
     const pageSize = clamp(pageSizeRaw, MIN_PAGE_SIZE, MAX_PAGE_SIZE);
     const offset = (page - 1) * pageSize;
 
-    // Se o offset for absurdo, evitamos consulta pesada e retornamos vazio "válido"
     if (offset > MAX_OFFSET) {
       const duration = Date.now() - startedAt;
       return NextResponse.json(
         {
           page,
           pageSize,
-          total: MAX_OFFSET, // estimativa segura
+          total: MAX_OFFSET,
           items: [],
           hasNextPage: false,
           meta: { degraded: false, estimate: true, requestId, durationMs: duration },
@@ -128,12 +172,18 @@ export async function GET(req: NextRequest) {
     const where: string[] = ["user_id = ?"];
     const params: any[] = [userId];
 
+    if (idParam) {
+      const idNum = Number(idParam);
+      if (Number.isFinite(idNum)) {
+        where.push("id = ?");
+        params.push(idNum);
+      }
+    }
     if (type)   { where.push("type = ?"); params.push(type); }
     if (status) { where.push("status = ?"); params.push(status); }
     if (source) { where.push("source = ?"); params.push(source); }
 
     if (q) {
-      // LIKE em colunas específicas + índice ajuda; limite de tamanho já aplicado
       where.push("(type LIKE ? OR description LIKE ? OR source LIKE ? OR ip LIKE ? OR user_agent LIKE ?)");
       const pat = `%${q}%`;
       params.push(pat, pat, pat, pat, pat);
@@ -150,26 +200,23 @@ export async function GET(req: NextRequest) {
 
     const whereSql = "WHERE " + where.join(" AND ");
 
-    // Consulta principal
     const listSql = `
-      /* recent-activities:list v1 */
-      SELECT id, type, status, description, amount_cents, currency, source, ip, user_agent, icon_url, created_at
-      FROM user_activity_log
-      ${whereSql}
-      ORDER BY created_at DESC, id DESC
-      LIMIT ? OFFSET ?
+      /* recent-activities:list v2 (with at_token) */
+      SELECT id, at_token, type, status, description, amount_cents, currency, source, ip, user_agent, icon_url, created_at
+        FROM user_activity_log
+        ${whereSql}
+       ORDER BY created_at DESC, id DESC
+       LIMIT ? OFFSET ?
     `;
     const countSql = `
       /* recent-activities:count v1 */
       SELECT COUNT(*) AS total
-      FROM user_activity_log
-      ${whereSql}
+        FROM user_activity_log
+        ${whereSql}
     `;
 
-    // 1) Busca itens
     const [rows] = await queryWithRetry<any[]>(listSql, [...params, pageSize, offset]);
 
-    // 2) Count (se falhar, fazemos fallback estimado)
     let total = 0;
     let estimate = false;
     try {
@@ -177,12 +224,11 @@ export async function GET(req: NextRequest) {
       total = Number(countRows?.[0]?.total ?? 0);
       if (!Number.isFinite(total)) total = 0;
     } catch {
-      // Fallback: estimativa segura baseada na página atual
-      total = offset + rows.length + (rows.length === pageSize ? 1 : 0);
+      total = offset + (rows?.length ?? 0) + ((rows?.length ?? 0) === pageSize ? 1 : 0);
       estimate = true;
     }
 
-    const hasNextPage = offset + rows.length < total;
+    const hasNextPage = offset + (rows?.length ?? 0) < total;
 
     const duration = Date.now() - startedAt;
     return NextResponse.json(
@@ -200,7 +246,6 @@ export async function GET(req: NextRequest) {
   } catch (err: any) {
     const duration = Date.now() - startedAt;
 
-    // Não autenticado
     if (err?.message === "Unauthorized") {
       return NextResponse.json(
         { error: "Unauthorized", meta: { requestId, durationMs: duration } },
@@ -208,8 +253,6 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Fallback seguro: não derruba a UI (200 com payload vazio e sinalizador degraded)
-    // Obs.: Se preferir manter 500 para observabilidade, troque '200' por '500'.
     return NextResponse.json(
       {
         page: DEFAULT_PAGE,

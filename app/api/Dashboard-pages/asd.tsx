@@ -1,4 +1,5 @@
-// app/api/Dashboard-pages/RecentActivitiesMain.tsx
+app/api/Dashboard-pages/RecentActivitiesMain.tsx
+
 "use client";
 
 import React from "react";
@@ -17,7 +18,6 @@ import type { Variants } from "framer-motion";
 /* ---------------- Types ---------------- */
 type Activity = {
   id: number;
-  at_token: string; // 👈 NOVO: token fixo vindo do banco
   type: string;
   status: string;
   description: string | null;
@@ -280,7 +280,7 @@ export function useLiveUA(): UAInfo {
 }
 
 /* ---------------- Query intelligence (FUZZY) ---------------- */
-// (sem alterações aqui)
+
 type ParsedQuery = {
   raw: string;
   idEquals?: number | null;
@@ -337,9 +337,9 @@ function levenshtein(a: string, b: string): number {
       const temp = dp[j];
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
       dp[j] = Math.min(
-        dp[j] + 1,
-        dp[j - 1] + 1,
-        prev + cost
+        dp[j] + 1,      // deletion
+        dp[j - 1] + 1,  // insertion
+        prev + cost     // substitution
       );
       prev = temp;
     }
@@ -476,8 +476,10 @@ function fuzzyIncludes(pool: string, term: string): boolean {
   return false;
 }
 
-const IP_LIKE = /^(\d{1,3}\.){1,3}\d{0,3}$/;
+/* ---- IP helper ---- */
+const IP_LIKE = /^(\d{1,3}\.){1,3}\d{0,3}$/; // parcial ou completo
 
+/* ---- parser inteligente ---- */
 function parseQuery(q: string): ParsedQuery {
   const raw = q || "";
   const parts = raw.split(/\s+/).filter(Boolean);
@@ -711,10 +713,11 @@ function smartFilterAndRank(list: Activity[], q: string): Activity[] {
 }
 
 /* ---------------- MenuSelect custom ---------------- */
-// (inalterado)
 type Opt = { value: string; label: string };
 
-function MenuSelect({ value, onChange, placeholder, options, className = "", placement = "bottom", }: {
+function MenuSelect({
+  value, onChange, placeholder, options, className = "", placement = "bottom",
+}: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
@@ -775,7 +778,8 @@ function MenuSelect({ value, onChange, placeholder, options, className = "", pla
                   role="option"
                   aria-selected={active}
                   onClick={() => { onChange(opt.value); setOpen(false); }}
-                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition ${active ? "bg-white/10 text-white" : "hover:bg-white/5 text-white/80"}`}
+                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition ${active ? "bg-white/10 text-white" : "hover:bg-white/5 text-white/80"
+                    }`}
                 >
                   <span>{opt.label}</span>
                   {active && (
@@ -812,11 +816,10 @@ function useKey(k: string, handler: () => void) {
   }, [handler, k]);
 }
 
-/* --- helpers UI --- */
-const HASH_BREAK = "\u2060";
+/* --- helpers: colocar perto dos outros helpers --- */
+const HASH_BREAK = "\u2060"; // caractere invisível (word-joiner)
 const maskHashUI = (s: string) => (s ?? "").replace(/#/g, `#${HASH_BREAK}`);
 const unmaskHashUI = (s: string) => (s ?? "").replace(new RegExp(HASH_BREAK, "g"), "");
-const groupATDisplay = (at: string) => (at || "").toLowerCase();
 
 /* ---------------- Search Overlay ---------------- */
 type SearchChoice =
@@ -885,7 +888,7 @@ function AIPalette({
     } else {
       const trimmed = query.trim();
       if (trimmed) onPick({ kind: "query", query: trimmed });
-      else onPick({ kind: "query", query: "" });
+      else onPick({ kind: "query", query: "" }); // ⬅️ Enter com vazio => limpar busca global
     }
   }
 
@@ -899,6 +902,7 @@ function AIPalette({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
       >
+        {/* Backdrop */}
         <motion.div
           className="absolute inset-0 bg-black/50 backdrop-blur-sm"
           onClick={onClose}
@@ -907,6 +911,7 @@ function AIPalette({
           exit={{ opacity: 0 }}
         />
 
+        {/* Card central (bottom-sheet no mobile) */}
         <motion.div
           className="relative z-[61] w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl border border-white/10 bg-[#050505]/95 shadow-2xl"
           initial={{ y: 20, scale: 0.98, opacity: 0 }}
@@ -923,14 +928,14 @@ function AIPalette({
             <div className="mt-3 relative">
               <input
                 autoFocus
-                value={maskHashUI(query)}
-                onChange={(e) => { setQuery(unmaskHashUI(e.target.value)); setActiveIdx(-1); }}
+                value={maskHashUI(query)}                               // 👈 exibe com máscara
+                onChange={(e) => { setQuery(unmaskHashUI(e.target.value)); setActiveIdx(-1); }} // 👈 estado cru
                 placeholder="Realize a busca de suas atividades aqui"
                 className="w-full rounded-lg bg-[#050505] border border-white/10 px-4 py-4 text-sm outline-none focus:border-white/20 pr-10"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    const trimmed = query.trim();
+                    const trimmed = query.trim(); // 👈 usa o 'query' cru
                     if (trimmed === "") onPick({ kind: "query", query: "" });
                     else chooseByIdx(activeIdx);
                   } else if (e.key === "ArrowDown") {
@@ -945,7 +950,7 @@ function AIPalette({
                   type="button"
                   aria-label="Limpar texto"
                   title="Limpar texto"
-                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseDown={(e) => e.preventDefault()}     // 👈 não tira o foco do input
                   onClick={(e) => { e.stopPropagation(); setQuery(""); }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded-[7px] border border-white/10 text-xs text-white/70 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-white/20"
                 >
@@ -954,6 +959,7 @@ function AIPalette({
               )}
             </div>
 
+            {/* Chips dos filtros compreendidos */}
             <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
               {parsed.idEquals != null && <span className="rounded border border-white/10 px-2 py-[2px] text-white/70">id:{formatIdTag(parsed.idEquals)}</span>}
               {parsed.types.map((t, i) => <span key={`t-${t}-${i}`} className="rounded border border-white/10 px-2 py-[2px] text-white/70">type:{t}</span>)}
@@ -1019,7 +1025,7 @@ function AIPalette({
                 } else if (trimmed) {
                   onPick({ kind: "query", query: trimmed });
                 } else {
-                  onPick({ kind: "query", query: "" });
+                  onPick({ kind: "query", query: "" }); // ⬅️ botão “Pesquisar” com vazio => limpar busca
                 }
               }}
               className="rounded-md border border-white/15 px-3 py-1.5 text-sm text-white/80 hover:bg-white/5"
@@ -1049,6 +1055,7 @@ function SkeletonCard() {
         </div>
       </div>
 
+      {/* shimmer */}
       <motion.div
         aria-hidden
         className="pointer-events-none absolute inset-0"
@@ -1090,7 +1097,70 @@ const cardVariants: Variants = {
   },
 };
 
-/* ---------------- InfoSheet ---------------- */
+/* -------------- SISTEMA DO PAINEL INFO COM ?at= (UUID-like) -------------- */
+/** Token + armazenamento em sessão */
+const AT_PREFIX = "wzb.at.";
+type ATPayload = { id: number; activity: Activity; savedAt: number };
+
+/** UUID v4 em formato dfa9da13-7fa7-4467-b7b1-61f1bba90092 */
+function generateAT(): string {
+  // usa nativo quando disponível (já retorna em minúsculas)
+  const anyCrypto: any = typeof crypto !== "undefined" ? crypto : null;
+  if (anyCrypto?.randomUUID) return anyCrypto.randomUUID();
+
+  // polyfill: 16 bytes aleatórios + bits de versão/variante
+  const bytes = new Uint8Array(16);
+  anyCrypto?.getRandomValues?.(bytes);
+  // versão 4 (0b0100) no nibble alto do byte 6
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  // variante RFC 4122 (10xxxxxx) no byte 8
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return (
+    hex.slice(0, 8) +
+    "-" +
+    hex.slice(8, 12) +
+    "-" +
+    hex.slice(12, 16) +
+    "-" +
+    hex.slice(16, 20) +
+    "-" +
+    hex.slice(20)
+  );
+}
+
+/** se já for UUID, mantém; senão, agrupa a cada 10 chars (legado) */
+function groupATDisplay(at: string) {
+  const s = (at || "").trim();
+  const uuidRe = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+  if (uuidRe.test(s)) return s.toLowerCase();
+  return s.replace(/-/g, "").replace(/(.{10})/g, "$1-").replace(/-$/, "");
+}
+
+function saveAT(at: string, payload: ATPayload) {
+  try {
+    sessionStorage.setItem(AT_PREFIX + at, JSON.stringify(payload));
+  } catch { }
+}
+
+function loadAT(at: string): ATPayload | null {
+  try {
+    const raw = sessionStorage.getItem(AT_PREFIX + at);
+    if (!raw) return null;
+    return JSON.parse(raw) as ATPayload;
+  } catch {
+    return null;
+  }
+}
+
+function removeAT(at: string) {
+  try {
+    sessionStorage.removeItem(AT_PREFIX + at);
+  } catch { }
+}
+
+/** Painel lateral de informações */
 function InfoSheet({
   open,
   onClose,
@@ -1119,8 +1189,10 @@ function InfoSheet({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
       >
+        {/* backdrop */}
         <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
+        {/* painel à direita */}
         <motion.div
           className="w-full max-w-[550px] h-full bg-[#050505] border-l border-white/10 shadow-2xl flex flex-col"
           initial={{ x: 40, opacity: 0 }}
@@ -1128,6 +1200,7 @@ function InfoSheet({
           exit={{ x: 20, opacity: 0 }}
           transition={{ type: "spring", stiffness: 360, damping: 34 }}
         >
+          {/* header */}
           <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
             <div className="min-w-0">
               <div className="text-xs text-white/40">Transferência de dinheiro</div>
@@ -1152,6 +1225,7 @@ function InfoSheet({
             </div>
           </div>
 
+          {/* barra com token */}
           <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between gap-3">
             <div className="text-xs text-white/50 truncate">
               <span className="text-white/40">AT:</span>{" "}
@@ -1167,6 +1241,7 @@ function InfoSheet({
             )}
           </div>
 
+          {/* conteúdo rolável */}
           <div className="flex-1 overflow-auto p-5 space-y-4">
             {!it ? (
               <div className="text-sm text-white/60">
@@ -1174,6 +1249,7 @@ function InfoSheet({
               </div>
             ) : (
               <>
+                {/* status + comprovante */}
                 <section className="rounded-lg border border-white/10 bg-black/10 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -1191,6 +1267,7 @@ function InfoSheet({
                   </div>
                 </section>
 
+                {/* meio de pagamento */}
                 <section className="rounded-lg border border-white/10 bg-black/10 p-4 space-y-1">
                   <div className="text-xs text-white/40">Meio de pagamento</div>
                   <div className="text-sm text-white/80">
@@ -1202,13 +1279,16 @@ function InfoSheet({
                   </div>
                 </section>
 
+                {/* tipo de transferência */}
                 <section className="rounded-lg border border-white/10 bg-black/10 p-4 space-y-1">
                   <div className="text-xs text-white/40">Tipo de transferência</div>
                   <div className="text-sm text-white/80">
                     {it.type?.startsWith("payment") ? "Pagamento" : it.type || "Não há informações"}
+                    {safeCurrency(it.currency)}{it.currency ? "" : ""}
                   </div>
                 </section>
 
+                {/* para / de */}
                 <section className="rounded-lg border border-white/10 bg-black/10 p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <div className="text-xs text-white/40">Para</div>
@@ -1224,6 +1304,7 @@ function InfoSheet({
                   </div>
                 </section>
 
+                {/* blocos adicionais */}
                 <section className="rounded-lg border border-white/10 bg-black/10 p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   <div><span className="text-white/50">ID:</span> {it.id}</div>
                   <div><span className="text-white/50">Criado:</span> {new Date(it.created_at).toLocaleString("pt-BR")}</div>
@@ -1237,6 +1318,7 @@ function InfoSheet({
                   </div>
                 </section>
 
+                {/* ajuda */}
                 <section className="rounded-lg border border-white/10 bg-black/10 p-4">
                   <div className="text-xs text-white/40 mb-2">Precisa de ajuda?</div>
                   <ul className="text-sm text-white/75 list-disc list-inside space-y-1">
@@ -1263,7 +1345,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
 
   // filtros / paginação
   const [page, setPage] = React.useState(1);
-  const [pageSize, setPageSize] = React.useState(10);
+  const [pageSize, setPageSize] = React.useState(20);
   const [type, setType] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [source, setSource] = React.useState("");
@@ -1312,8 +1394,8 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
       pageSize: String(pageSize),
     });
     if (selectedId != null) {
-      params.set("id", String(selectedId));
-      params.set("q", formatIdTag(selectedId));
+      params.set("id", String(selectedId)); // se o backend suportar
+      params.set("q", formatIdTag(selectedId)); // fallback textual
     } else if (qDebounced) {
       params.set("q", qDebounced);
     }
@@ -1422,6 +1504,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
 
   const isMobile = useIsMobile();
 
+  // helper para limpar busca + estado
   const clearSearch = React.useCallback(() => {
     setSelectedId(null);
     setSelectedActivity(null);
@@ -1434,9 +1517,9 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
   const [infoAT, setInfoAT] = React.useState<string | null>(null);
   const [infoActivity, setInfoActivity] = React.useState<Activity | null>(null);
 
-  // abrir painel a partir do card, usando token fixo do banco
   const openInfoFor = React.useCallback((act: Activity) => {
-    const at = act.at_token;
+    const at = generateAT(); // usa o default (50)
+    saveAT(at, { id: act.id, activity: act, savedAt: Date.now() });
     const url = new URL(window.location.href);
     url.searchParams.set("at", at);
     window.history.pushState({ at }, "", url.toString());
@@ -1449,30 +1532,11 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
     const url = new URL(window.location.href);
     url.searchParams.delete("at");
     window.history.pushState({}, "", url.toString());
+    if (infoAT) removeAT(infoAT);
     setInfoAT(null);
     setInfoActivity(null);
     setInfoOpen(false);
-  }, []);
-
-  // helper para buscar por token (quando abre por URL / refresh)
-  const fetchByToken = React.useCallback(async (at: string) => {
-    try {
-      const res = await fetch(`/api/recent-activities?at=${encodeURIComponent(at)}`, {
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error(String(res.status));
-      const json = await res.json();
-      const item: Activity | null = Array.isArray(json.items) && json.items.length ? json.items[0] : null;
-      setInfoAT(at);
-      setInfoActivity(item);
-      setInfoOpen(true);
-    } catch {
-      setInfoAT(at);
-      setInfoActivity(null); // exibe mensagem “não conseguimos recuperar...”
-      setInfoOpen(true);
-    }
-  }, []);
+  }, [infoAT]);
 
   // back/forward do navegador
   React.useEffect(() => {
@@ -1485,19 +1549,37 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
         setInfoActivity(null);
         return;
       }
-      fetchByToken(at);
+      const loaded = loadAT(at);
+      if (loaded?.activity) {
+        setInfoAT(at);
+        setInfoActivity(loaded.activity);
+        setInfoOpen(true);
+      } else {
+        setInfoAT(at);
+        setInfoActivity(null);
+        setInfoOpen(true);
+      }
     };
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
-  }, [fetchByToken]);
+  }, []);
 
   // abrir pelo ?at= direto (refresh/entrada)
   React.useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
     const at = sp.get("at");
     if (!at) return;
-    fetchByToken(at);
-  }, [fetchByToken]);
+    const payload = loadAT(at);
+    if (payload?.activity) {
+      setInfoAT(at);
+      setInfoActivity(payload.activity);
+      setInfoOpen(true);
+    } else {
+      setInfoAT(at);
+      setInfoActivity(null);
+      setInfoOpen(true);
+    }
+  }, []);
 
   /* ---------------- UI ---------------- */
   return (
@@ -1517,6 +1599,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 max-w-[90rem] lg:mx-auto lg:w-full lg:px-0">
+              {/* Cabeçalho + filtros (mobile-first) */}
               <div className="px-4 lg:px-6 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <h2 className="text-base sm:text-[20px] font-semibold text-white/90">Atividades recentes</h2>
@@ -1532,6 +1615,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                   )}
                 </div>
 
+                {/* Linha 1: campo de busca + botão filtros no mobile */}
                 <div className="flex gap-2">
                   <div className="w-full relative">
                     <button
@@ -1539,17 +1623,17 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                       onClick={() => setAiOpen(true)}
                       className="w-full rounded-md bg-[#050505] border border-white/10 px-3 sm:px-4 py-3 sm:py-4 text-sm text-white/60 hover:bg-white/5 transition flex items-center justify-between"
                     >
-                      <span className={(selectedId != null || qDebounced) ? "text-white/90 truncate" : "text-white/40"}>
-                        {maskHashUI(selectedId != null ? formatIdTag(selectedId) : qDebounced) || "Busque pelas suas atividades aqui"}
+                      <span className={effectiveQuery ? "text-white/90 truncate" : "text-white/40"}>
+                        {maskHashUI(effectiveQuery) || "Busque pelas suas atividades aqui"}
                       </span>
-                      {selectedId == null && !qDebounced && (
+                      {!effectiveQuery && selectedId == null && (
                         <span className="hidden sm:inline text-[11px] text-white/40 border border-white/10 rounded px-2 py-[2px]">
                           Ctrl + K
                         </span>
                       )}
                     </button>
 
-                    {(selectedId != null || !!qDebounced) && (
+                    {(selectedId != null || !!effectiveQuery) && (
                       <button
                         type="button"
                         aria-label="Limpar busca"
@@ -1576,13 +1660,16 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                   </button>
                 </div>
 
+                {/* Filtros colapsáveis no mobile; lado a lado no desktop */}
                 <div
                   id="mobile-filters"
                   aria-hidden={isMobile ? !mobileFiltersOpen : false}
                   data-open={isMobile ? (mobileFiltersOpen ? "true" : "false") : "true"}
                   className={[
                     "grid grid-cols-2 gap-2 transition-all",
-                    mobileFiltersOpen ? "max-h-[320px] opacity-100" : "max-h-0 opacity-0 pointer-events-none",
+                    mobileFiltersOpen
+                      ? "max-h-[320px] opacity-100"
+                      : "max-h-0 opacity-0 pointer-events-none",
                     "min-[1250px]:grid min-[1250px]:grid-cols-5 min-[1250px]:gap-2",
                     "min-[1250px]:max-h-none min-[1250px]:opacity-100 min-[1250px]:pointer-events-auto min-[1250px]:transition-none",
                   ].join(" ")}
@@ -1640,6 +1727,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                 </div>
               </div>
 
+              {/* Lista em CARDS */}
               <div className="px-4 lg:px-6">
                 {loading && (
                   <div className="space-y-2">
@@ -1701,8 +1789,9 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                               whileHover={{ y: -2 }}
                               whileTap={{ scale: 0.995 }}
                               viewport={{ once: true, margin: "-80px" }}
-                              className="group rounded-xl border border-white/10 bg-[#050505] p-3 hover:border-white/20 hover:bg-[#0c0c0c] transition"
+                              className="group rounded-xl border border-white/10 bg-[#050505] p-3 hover:border-white/20 hover:bg-[#0c0c0c] transition will-change-transform will-change-[filter,transform,opacity]"
                             >
+                              {/* Wrapper clicável do card para abrir o painel Info */}
                               <div
                                 role="button"
                                 tabIndex={0}
@@ -1710,6 +1799,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                                 onKeyDown={(e) => { if (e.key === "Enter") openInfoFor(it); }}
                               >
                                 <div className="flex items-start gap-3">
+                                  {/* Avatar */}
                                   <motion.div
                                     className="relative shrink-0"
                                     whileHover={{ y: -1 }}
@@ -1726,6 +1816,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                                     )}
                                   </motion.div>
 
+                                  {/* Conteúdo */}
                                   <div className="flex-1 min-w-0">
                                     <div className="flex flex-wrap items-center gap-2">
                                       <span className="font-medium text-white/90">{it.type}</span>
@@ -1753,129 +1844,130 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                                           onClick={(e) => copyIp(it.ip, e)}
                                           title={it.ip ? `Copiar IP ${it.ip}` : "Sem IP"}
                                           className="hover:text-white/80 transition"
-                                        />
+                                        >
+                                        </button>
                                       </div>
                                     </div>
 
-                                   {/* Detalhes avançados */}
-                                                                       <div className="mt-2">
-                                                                         <button
-                                                                           onClick={(e) => { e.stopPropagation(); toggleExpanded(it.id); }}
-                                                                           className="text-[12px] text-white/60 hover:text-white/80 transition inline-flex items-center gap-1"
-                                                                         >
-                                                                           <svg width="14" height="14" viewBox="0 0 20 20" className={`${open ? "rotate-180" : ""} transition`}>
-                                                                             <path fill="currentColor" d="M5 8l5 5l5-5H5z" />
-                                                                           </svg>
-                                                                           Detalhes
-                                                                         </button>
-                                                                         <AnimatePresence initial={false}>
-                                                                           {open && (
-                                                                             <motion.div
-                                                                               layout
-                                                                               key={`details-${it.id}`}
-                                                                               initial={{ height: 0, opacity: 0, filter: "blur(4px)" as any }}
-                                                                               animate={{ height: "auto", opacity: 1, filter: "blur(0px)" as any }}
-                                                                               exit={{ height: 0, opacity: 0, filter: "blur(3px)" as any }}
-                                                                               transition={{ type: "spring", stiffness: 360, damping: 32 }}
-                                                                               className="overflow-hidden"
-                                                                               onClick={(e) => e.stopPropagation()}
-                                                                             >
-                                                                               <div className="mt-2 rounded-lg border border-white/10 bg:black/10 p-3 text-[12px] text-white/70 grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                                                 {/* Identificação */}
-                                                                                 <div><span className="text-white/50">ID:</span> {it.id} <span className="text-white/40">({formatIdTag(it.id)})</span></div>
-                                                                                 <div className="truncate"><span className="text-white/50">Request:</span> <Copyable text={it.request_id}>{maskId(it.request_id)}</Copyable></div>
-                                                                                 <div className="truncate"><span className="text-white/50">Correlation:</span> <Copyable text={it.correlation_id}>{maskId(it.correlation_id)}</Copyable></div>
-                                                                                 <div className="truncate"><span className="text-white/50">Session:</span> <Copyable text={it.session_id}>{maskId(it.session_id)}</Copyable></div>
-                                                                                 <div className="truncate"><span className="text-white/50">Device:</span> <Copyable text={it.device_id}>{maskId(it.device_id)}</Copyable></div>
-                                   
-                                                                                 {/* Segurança & risco */}
-                                                                                 <div className="flex flex-wrap items-center gap-2">
-                                                                                   <span className="text-white/50">KYC:</span> <Badge>{it.kyc_level || "Não há informações"}</Badge>
-                                                                                   <RiskPill score={it.risk_score} />
-                                                                                   {Array.isArray(it.risk_flags) && it.risk_flags.length > 0 && (
-                                                                                     <div className="flex flex-wrap gap-1">
-                                                                                       {it.risk_flags.slice(0, 4).map((f) => (<Badge key={f}>{f}</Badge>))}
-                                                                                       {it.risk_flags.length > 4 && <Badge>+{it.risk_flags.length - 4}</Badge>}
-                                                                                     </div>
-                                                                                   )}
-                                                                                 </div>
-                                   
-                                                                                 {/* Origem & ambiente */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Ambiente:</span>{" "}
-                                                                                   <Badge className={
-                                                                                     it.environment === "prod" ? "border-red-400/40 text-red-300 bg-red-500/10"
-                                                                                       : it.environment === "sandbox" ? "border-yellow-400/40 text-yellow-200 bg-yellow-500/10"
-                                                                                         : "border-white/15 text-white/80"
-                                                                                   }>
-                                                                                     {it.environment || "Não há informações"}
-                                                                                   </Badge>
-                                                                                 </div>
-                                                                                 <div className="truncate"><span className="text-white/50">Origem:</span> {it.source || "Não há informações"}</div>
-                                   
-                                                                                 {/* Localização */}
-                                                                                 <div className="truncate"><span className="text-white/50">IP:</span> <Copyable text={it.ip}>{it.ip || "Não há informações"}</Copyable></div>
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Geo:</span>{" "}
-                                                                                   {[it.location?.city, it.location?.region, it.location?.country].filter(Boolean).join(" · ") || "Não há informações"} {it.location?.asn ? ` · ASN ${it.location.asn}` : ""}
-                                                                                 </div>
-                                   
-                                                                                 {/* Navegador & SO */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Navegador:</span>{" "}
-                                                                                   {(it.user_agent ? parseUA(it.user_agent) : liveUA).browser || "Não há informações"}
-                                                                                 </div>
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">SO:</span>{" "}
-                                                                                   {(it.user_agent ? parseUA(it.user_agent) : liveUA).os || "Não há informações"}
-                                                                                 </div>
-                                                                                 <div className="truncate"><span className="text-white/50">User-Agent:</span> <Copyable text={it.user_agent}>{it.user_agent || "Não há informações"}</Copyable></div>
-                                   
-                                                                                 {/* HTTP & performance */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">HTTP:</span>{" "}
-                                                                                   {[it.http?.method, it.http?.path].filter(Boolean).join(" ") || "Não há informações"}
-                                                                                 </div>
-                                                                                 <div className="truncate"><span className="text-white/50">Status:</span> {it.http?.status ?? "Não há informações"}</div>
-                                                                                 <div className="truncate"><span className="text-white/50">Latency:</span> {typeof it.http?.latency_ms === "number" ? `${it.http?.latency_ms} ms` : "Não há informações"}</div>
-                                                                                 <div className="truncate"><span className="text-white/50">Idempotency-Key:</span> <Copyable text={it.http?.idempotency_key}>{maskId(it.http?.idempotency_key)}</Copyable></div>
-                                   
-                                                                                 {/* TLS */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">TLS:</span>{" "}
-                                                                                   {[it.tls?.version, it.tls?.cipher].filter(Boolean).join(" · ") || "Não há informações"}
-                                                                                 </div>
-                                   
-                                                                                 {/* Pagamento */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Cartão:</span>{" "}
-                                                                                   {[it.payment?.card_brand, it.payment?.card_last4 ? `•••• ${it.payment?.card_last4}` : null].filter(Boolean).join(" · ") || "Não há informações"}
-                                                                                 </div>
-                                                                                 <div className="truncate"><span className="text-white/50">Parcelas:</span> {it.payment?.installment_count ?? "Não há informações"}</div>
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Gateway:</span>{" "}
-                                                                                   {it.payment?.gateway_code || "Não há informações"}{it.payment?.chargeback ? " · chargeback" : ""}
-                                                                                 </div>
-                                   
-                                                                                 {/* Webhook */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Webhook:</span>{" "}
-                                                                                   {it.webhook?.attempts != null ? `${it.webhook.attempts} tentativa(s)` : "Não há informações"}
-                                                                                   {it.webhook?.last_status ? ` · ${it.webhook.last_status}` : ""}
-                                                                                 </div>
-                                   
-                                                                                 {/* Identidades */}
-                                                                                 <div className="truncate"><span className="text-white/50">Cliente:</span> <Copyable text={it.customer_id}>{maskId(it.customer_id)}</Copyable></div>
-                                                                                 <div className="truncate"><span className="text-white/50">Estabelecimento:</span> <Copyable text={it.merchant_id}>{maskId(it.merchant_id)}</Copyable></div>
-                                   
-                                                                                 {/* Datas */}
-                                                                                 <div className="truncate"><span className="text-white/50">Criado:</span> {new Date(it.created_at).toLocaleString("pt-BR")}</div>
-                                                                                 <div className="truncate"><span className="text-white/50">ISO:</span> {new Date(it.created_at).toISOString()}</div>
-                                                                               </div>
-                                                                             </motion.div>
-                                                                           )}
-                                                                         </AnimatePresence>
-                                                                       </div>
+                                    {/* Detalhes avançados */}
+                                    <div className="mt-2">
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); toggleExpanded(it.id); }}
+                                        className="text-[12px] text-white/60 hover:text-white/80 transition inline-flex items-center gap-1"
+                                      >
+                                        <svg width="14" height="14" viewBox="0 0 20 20" className={`${open ? "rotate-180" : ""} transition`}>
+                                          <path fill="currentColor" d="M5 8l5 5l5-5H5z" />
+                                        </svg>
+                                        Detalhes
+                                      </button>
+                                      <AnimatePresence initial={false}>
+                                        {open && (
+                                          <motion.div
+                                            layout
+                                            key={`details-${it.id}`}
+                                            initial={{ height: 0, opacity: 0, filter: "blur(4px)" as any }}
+                                            animate={{ height: "auto", opacity: 1, filter: "blur(0px)" as any }}
+                                            exit={{ height: 0, opacity: 0, filter: "blur(3px)" as any }}
+                                            transition={{ type: "spring", stiffness: 360, damping: 32 }}
+                                            className="overflow-hidden"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <div className="mt-2 rounded-lg border border-white/10 bg:black/10 p-3 text-[12px] text-white/70 grid grid-cols-1 md:grid-cols-2 gap-2">
+                                              {/* Identificação */}
+                                              <div><span className="text-white/50">ID:</span> {it.id} <span className="text-white/40">({formatIdTag(it.id)})</span></div>
+                                              <div className="truncate"><span className="text-white/50">Request:</span> <Copyable text={it.request_id}>{maskId(it.request_id)}</Copyable></div>
+                                              <div className="truncate"><span className="text-white/50">Correlation:</span> <Copyable text={it.correlation_id}>{maskId(it.correlation_id)}</Copyable></div>
+                                              <div className="truncate"><span className="text-white/50">Session:</span> <Copyable text={it.session_id}>{maskId(it.session_id)}</Copyable></div>
+                                              <div className="truncate"><span className="text-white/50">Device:</span> <Copyable text={it.device_id}>{maskId(it.device_id)}</Copyable></div>
+
+                                              {/* Segurança & risco */}
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <span className="text-white/50">KYC:</span> <Badge>{it.kyc_level || "Não há informações"}</Badge>
+                                                <RiskPill score={it.risk_score} />
+                                                {Array.isArray(it.risk_flags) && it.risk_flags.length > 0 && (
+                                                  <div className="flex flex-wrap gap-1">
+                                                    {it.risk_flags.slice(0, 4).map((f) => (<Badge key={f}>{f}</Badge>))}
+                                                    {it.risk_flags.length > 4 && <Badge>+{it.risk_flags.length - 4}</Badge>}
+                                                  </div>
+                                                )}
+                                              </div>
+
+                                              {/* Origem & ambiente */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">Ambiente:</span>{" "}
+                                                <Badge className={
+                                                  it.environment === "prod" ? "border-red-400/40 text-red-300 bg-red-500/10"
+                                                    : it.environment === "sandbox" ? "border-yellow-400/40 text-yellow-200 bg-yellow-500/10"
+                                                      : "border-white/15 text-white/80"
+                                                }>
+                                                  {it.environment || "Não há informações"}
+                                                </Badge>
+                                              </div>
+                                              <div className="truncate"><span className="text-white/50">Origem:</span> {it.source || "Não há informações"}</div>
+
+                                              {/* Localização */}
+                                              <div className="truncate"><span className="text-white/50">IP:</span> <Copyable text={it.ip}>{it.ip || "Não há informações"}</Copyable></div>
+                                              <div className="truncate">
+                                                <span className="text-white/50">Geo:</span>{" "}
+                                                {[it.location?.city, it.location?.region, it.location?.country].filter(Boolean).join(" · ") || "Não há informações"} {it.location?.asn ? ` · ASN ${it.location.asn}` : ""}
+                                              </div>
+
+                                              {/* Navegador & SO */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">Navegador:</span>{" "}
+                                                {(it.user_agent ? parseUA(it.user_agent) : liveUA).browser || "Não há informações"}
+                                              </div>
+                                              <div className="truncate">
+                                                <span className="text-white/50">SO:</span>{" "}
+                                                {(it.user_agent ? parseUA(it.user_agent) : liveUA).os || "Não há informações"}
+                                              </div>
+                                              <div className="truncate"><span className="text-white/50">User-Agent:</span> <Copyable text={it.user_agent}>{it.user_agent || "Não há informações"}</Copyable></div>
+
+                                              {/* HTTP & performance */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">HTTP:</span>{" "}
+                                                {[it.http?.method, it.http?.path].filter(Boolean).join(" ") || "Não há informações"}
+                                              </div>
+                                              <div className="truncate"><span className="text-white/50">Status:</span> {it.http?.status ?? "Não há informações"}</div>
+                                              <div className="truncate"><span className="text-white/50">Latency:</span> {typeof it.http?.latency_ms === "number" ? `${it.http?.latency_ms} ms` : "Não há informações"}</div>
+                                              <div className="truncate"><span className="text-white/50">Idempotency-Key:</span> <Copyable text={it.http?.idempotency_key}>{maskId(it.http?.idempotency_key)}</Copyable></div>
+
+                                              {/* TLS */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">TLS:</span>{" "}
+                                                {[it.tls?.version, it.tls?.cipher].filter(Boolean).join(" · ") || "Não há informações"}
+                                              </div>
+
+                                              {/* Pagamento */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">Cartão:</span>{" "}
+                                                {[it.payment?.card_brand, it.payment?.card_last4 ? `•••• ${it.payment?.card_last4}` : null].filter(Boolean).join(" · ") || "Não há informações"}
+                                              </div>
+                                              <div className="truncate"><span className="text-white/50">Parcelas:</span> {it.payment?.installment_count ?? "Não há informações"}</div>
+                                              <div className="truncate">
+                                                <span className="text-white/50">Gateway:</span>{" "}
+                                                {it.payment?.gateway_code || "Não há informações"}{it.payment?.chargeback ? " · chargeback" : ""}
+                                              </div>
+
+                                              {/* Webhook */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">Webhook:</span>{" "}
+                                                {it.webhook?.attempts != null ? `${it.webhook.attempts} tentativa(s)` : "Não há informações"}
+                                                {it.webhook?.last_status ? ` · ${it.webhook.last_status}` : ""}
+                                              </div>
+
+                                              {/* Identidades */}
+                                              <div className="truncate"><span className="text-white/50">Cliente:</span> <Copyable text={it.customer_id}>{maskId(it.customer_id)}</Copyable></div>
+                                              <div className="truncate"><span className="text-white/50">Estabelecimento:</span> <Copyable text={it.merchant_id}>{maskId(it.merchant_id)}</Copyable></div>
+
+                                              {/* Datas */}
+                                              <div className="truncate"><span className="text-white/50">Criado:</span> {new Date(it.created_at).toLocaleString("pt-BR")}</div>
+                                              <div className="truncate"><span className="text-white/50">ISO:</span> {new Date(it.created_at).toISOString()}</div>
+                                            </div>
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -1887,6 +1979,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                   </LayoutGroup>
                 )}
 
+                {/* Paginação */}
                 <div className="mt-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <motion.button
@@ -1910,7 +2003,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                   <div className="flex items-center gap-2 text-white/50 h-10">
                     <MenuSelect
                       value={String(pageSize)}
-                      onChange={(v) => { setPage(1); setPageSize(Number(v) || 10); }}
+                      onChange={(v) => { setPage(1); setPageSize(Number(v) || 20); }}
                       placeholder={`${pageSize}/página`}
                       options={[10, 20, 50, 100].map((n) => ({ value: String(n), label: `${n}/página` }))}
                       className="w-[120px] [&>button]:py-2 [&>button]:px-2 [&>button]:text-xs"
@@ -1923,13 +2016,15 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
           </div>
         </div>
 
+        {/* Painel Info com ?at= */}
         <InfoSheet
           open={infoOpen}
           onClose={closeInfo}
           activity={infoActivity}
-          atToken={infoActivity?.at_token ?? infoAT}
+          atToken={infoAT}
         />
 
+        {/* Overlay de busca */}
         <AIPalette
           open={aiOpen}
           onClose={() => setAiOpen(false)}
@@ -1955,3 +2050,372 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
     </SidebarProvider>
   );
 }
+
+
+
+
+// app/api/recent-activities/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import jwt from "jsonwebtoken";
+import { db } from "@/app/api/db";
+import { randomUUID } from "crypto";
+
+export const runtime = "nodejs";
+
+type JwtPayload = { uid: number };
+
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 20;
+const MIN_PAGE_SIZE = 5;
+const MAX_PAGE_SIZE = 100;
+const MAX_OFFSET = 10_000;            // evita scans muito grandes
+const MAX_Q_LEN = 100;                // limita custo de LIKE
+const QUERY_TIMEOUT_MS = 2500;        // timeout por query
+const RETRIES = 1;                    // 1 retry leve em falhas transitórias
+const BACKOFF_MS = 80;
+
+function requireUserIdFromCookie(req: NextRequest): number {
+  const session = req.cookies.get("wzb_lg")?.value;
+  if (!session) throw new Error("Unauthorized");
+
+  let decoded: JwtPayload;
+  try {
+    decoded = jwt.verify(session, process.env.JWT_SECRET || "supersecretkey") as JwtPayload;
+  } catch {
+    throw new Error("Unauthorized");
+  }
+  const uid = Number(decoded.uid);
+  if (!Number.isFinite(uid) || uid <= 0) throw new Error("Unauthorized");
+  return uid;
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function isValidDateISO(d: string): boolean {
+  // YYYY-MM-DD
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  const dt = new Date(`${d}T00:00:00Z`);
+  return !isNaN(dt.getTime());
+}
+
+// Timeout helper (não cancela no driver, mas evita pendurar a rota)
+async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("QueryTimeout")), ms);
+  });
+  try {
+    // @ts-ignore
+    return await Promise.race([p, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+// Retry leve para falhas transitórias (ER_LOCK_DEADLOCK, pool reset, etc.)
+async function queryWithRetry<T = any[]>(sql: string, params: any[], retries = RETRIES): Promise<[T, any]> {
+  let lastErr: any;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      // importante: cada tentativa com timeout
+      // @ts-ignore
+      return await withTimeout(db.query(sql, params), QUERY_TIMEOUT_MS);
+    } catch (err: any) {
+      lastErr = err;
+      const transient =
+        err?.code === "ER_LOCK_DEADLOCK" ||
+        err?.code === "PROTOCOL_CONNECTION_LOST" ||
+        err?.code === "ECONNRESET" ||
+        err?.message === "QueryTimeout";
+      if (!transient || i === retries) break;
+      await new Promise((r) => setTimeout(r, BACKOFF_MS * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
+export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
+  const requestId = randomUUID();
+
+  // Headers padrão pro response
+  const baseHeaders = {
+    "cache-control": "no-store",
+    "x-request-id": requestId,
+  } as Record<string, string>;
+
+  try {
+    const userId = requireUserIdFromCookie(req);
+    const url = new URL(req.url);
+
+    const page = Math.max(1, Number(url.searchParams.get("page") || DEFAULT_PAGE));
+    const pageSizeRaw = Number(url.searchParams.get("pageSize") || DEFAULT_PAGE_SIZE);
+    const pageSize = clamp(pageSizeRaw, MIN_PAGE_SIZE, MAX_PAGE_SIZE);
+    const offset = (page - 1) * pageSize;
+
+    // Se o offset for absurdo, evitamos consulta pesada e retornamos vazio "válido"
+    if (offset > MAX_OFFSET) {
+      const duration = Date.now() - startedAt;
+      return NextResponse.json(
+        {
+          page,
+          pageSize,
+          total: MAX_OFFSET, // estimativa segura
+          items: [],
+          hasNextPage: false,
+          meta: { degraded: false, estimate: true, requestId, durationMs: duration },
+        },
+        { headers: baseHeaders }
+      );
+    }
+
+    const type = (url.searchParams.get("type") || "").trim();
+    const status = (url.searchParams.get("status") || "").trim();
+    const source = (url.searchParams.get("source") || "").trim();
+
+    let q = (url.searchParams.get("q") || "").trim().replace(/\s+/g, " ");
+    if (q.length > MAX_Q_LEN) q = q.slice(0, MAX_Q_LEN);
+
+    const from = (url.searchParams.get("from") || "").trim();
+    const to = (url.searchParams.get("to") || "").trim();
+
+    const where: string[] = ["user_id = ?"];
+    const params: any[] = [userId];
+
+    if (type)   { where.push("type = ?"); params.push(type); }
+    if (status) { where.push("status = ?"); params.push(status); }
+    if (source) { where.push("source = ?"); params.push(source); }
+
+    if (q) {
+      // LIKE em colunas específicas + índice ajuda; limite de tamanho já aplicado
+      where.push("(type LIKE ? OR description LIKE ? OR source LIKE ? OR ip LIKE ? OR user_agent LIKE ?)");
+      const pat = `%${q}%`;
+      params.push(pat, pat, pat, pat, pat);
+    }
+
+    if (from && isValidDateISO(from)) {
+      where.push("created_at >= ?");
+      params.push(`${from} 00:00:00`);
+    }
+    if (to && isValidDateISO(to)) {
+      where.push("created_at <= ?");
+      params.push(`${to} 23:59:59`);
+    }
+
+    const whereSql = "WHERE " + where.join(" AND ");
+
+    // Consulta principal
+    const listSql = `
+      /* recent-activities:list v1 */
+      SELECT id, type, status, description, amount_cents, currency, source, ip, user_agent, icon_url, created_at
+      FROM user_activity_log
+      ${whereSql}
+      ORDER BY created_at DESC, id DESC
+      LIMIT ? OFFSET ?
+    `;
+    const countSql = `
+      /* recent-activities:count v1 */
+      SELECT COUNT(*) AS total
+      FROM user_activity_log
+      ${whereSql}
+    `;
+
+    // 1) Busca itens
+    const [rows] = await queryWithRetry<any[]>(listSql, [...params, pageSize, offset]);
+
+    // 2) Count (se falhar, fazemos fallback estimado)
+    let total = 0;
+    let estimate = false;
+    try {
+      const [countRows] = await queryWithRetry<any[]>(countSql, params);
+      total = Number(countRows?.[0]?.total ?? 0);
+      if (!Number.isFinite(total)) total = 0;
+    } catch {
+      // Fallback: estimativa segura baseada na página atual
+      total = offset + rows.length + (rows.length === pageSize ? 1 : 0);
+      estimate = true;
+    }
+
+    const hasNextPage = offset + rows.length < total;
+
+    const duration = Date.now() - startedAt;
+    return NextResponse.json(
+      {
+        page,
+        pageSize,
+        total,
+        items: rows ?? [],
+        hasNextPage,
+        nextPage: hasNextPage ? page + 1 : null,
+        meta: { degraded: false, estimate, requestId, durationMs: duration },
+      },
+      { headers: baseHeaders }
+    );
+  } catch (err: any) {
+    const duration = Date.now() - startedAt;
+
+    // Não autenticado
+    if (err?.message === "Unauthorized") {
+      return NextResponse.json(
+        { error: "Unauthorized", meta: { requestId, durationMs: duration } },
+        { status: 401, headers: baseHeaders }
+      );
+    }
+
+    // Fallback seguro: não derruba a UI (200 com payload vazio e sinalizador degraded)
+    // Obs.: Se preferir manter 500 para observabilidade, troque '200' por '500'.
+    return NextResponse.json(
+      {
+        page: DEFAULT_PAGE,
+        pageSize: DEFAULT_PAGE_SIZE,
+        total: 0,
+        items: [],
+        hasNextPage: false,
+        nextPage: null,
+        meta: {
+          degraded: true,
+          estimate: false,
+          requestId,
+          durationMs: duration,
+          error: process.env.NODE_ENV === "production" ? "TemporaryUnavailable" : String(err?.message || err),
+        },
+      },
+      { status: 200, headers: baseHeaders }
+    );
+  }
+} 
+
+
+// app/api/recent-activities/stream/route.ts
+import { NextRequest } from "next/server";
+import jwt from "jsonwebtoken";
+import { db } from "@/app/api/db";
+
+export const runtime = "nodejs";
+
+type JwtPayload = { uid: number };
+
+function requireUserIdFromCookie(req: NextRequest): number {
+  const session = req.cookies.get("wzb_lg")?.value;
+  if (!session) throw new Error("Unauthorized");
+  let decoded: JwtPayload;
+  try {
+    decoded = jwt.verify(session, process.env.JWT_SECRET || "supersecretkey") as JwtPayload;
+  } catch {
+    throw new Error("Unauthorized");
+  }
+  const uid = Number(decoded.uid);
+  if (!Number.isFinite(uid) || uid <= 0) throw new Error("Unauthorized");
+  return uid;
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const userId = requireUserIdFromCookie(req);
+    const url = new URL(req.url);
+
+    const type = url.searchParams.get("type") || "";
+    const status = url.searchParams.get("status") || "";
+    const source = url.searchParams.get("source") || "";
+    const q = (url.searchParams.get("q") || "").trim();
+    const from = url.searchParams.get("from") || "";
+    const to = url.searchParams.get("to") || "";
+    const sinceMs = Number(url.searchParams.get("since") || Date.now());
+    let lastSeen = new Date(sinceMs); // created_at > lastSeen
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const enc = new TextEncoder();
+
+        function send(ev: "message" | "heartbeat", data?: any) {
+          const payload =
+            ev === "heartbeat"
+              ? `event: heartbeat\ndata: {}\n\n`
+              : `data: ${JSON.stringify(data)}\n\n`;
+          controller.enqueue(enc.encode(payload));
+        }
+
+        // headers iniciais são definidos na Response
+        let active = true;
+        const interval = setInterval(() => {
+          if (!active) return;
+          send("heartbeat");
+        }, 20000);
+
+        async function tick() {
+          if (!active) return;
+
+          const where: string[] = ["user_id = ? AND created_at > ?"];
+          const params: any[] = [userId, lastSeen];
+
+          if (type)   { where.push("type = ?"); params.push(type); }
+          if (status) { where.push("status = ?"); params.push(status); }
+          if (source) { where.push("source = ?"); params.push(source); }
+          if (q) {
+            where.push("(type LIKE ? OR description LIKE ? OR source LIKE ? OR ip LIKE ? OR user_agent LIKE ?)");
+            const pat = `%${q}%`;
+            params.push(pat, pat, pat, pat, pat);
+          }
+          if (from)   { where.push("created_at >= ?"); params.push(`${from} 00:00:00`); }
+          if (to)     { where.push("created_at <= ?"); params.push(`${to} 23:59:59`); }
+
+          const whereSql = "WHERE " + where.join(" AND ");
+
+          try {
+            const [rows] = await db.query(
+              `
+              SELECT id, type, status, description, amount_cents, currency, source, ip, user_agent, icon_url, created_at
+                FROM user_activity_log
+                ${whereSql}
+               ORDER BY created_at ASC
+              `,
+              params
+            );
+
+            const items = rows as any[];
+            if (items.length) {
+              for (const it of items) {
+                send("message", it);
+                const ts = new Date(it.created_at);
+                if (ts > lastSeen) lastSeen = ts;
+              }
+            }
+          } catch {
+            // silêncio: mantém o stream vivo
+          }
+
+          setTimeout(tick, 1500);
+        }
+
+        tick();
+
+        const abort = req.signal;
+        abort.addEventListener("abort", () => {
+          active = false;
+          clearInterval(interval);
+          controller.close();
+        });
+      },
+    });
+
+  return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
+  } catch (err: any) {
+    return new Response(`event: error\ndata: ${JSON.stringify({ error: err?.message || "Unauthorized" })}\n\n`, {
+      status: err?.message === "Unauthorized" ? 401 : 500,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  }
+}
+
+
+
+Atualize os 3 codigos ai para funcionar tudo completo com esses novos sql que voce fez ai

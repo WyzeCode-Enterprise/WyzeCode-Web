@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
     const q = (url.searchParams.get("q") || "").trim();
     const from = url.searchParams.get("from") || "";
     const to = url.searchParams.get("to") || "";
+    const at = (url.searchParams.get("at") || "").trim(); // opcional
     const sinceMs = Number(url.searchParams.get("since") || Date.now());
     let lastSeen = new Date(sinceMs); // created_at > lastSeen
 
@@ -47,7 +48,6 @@ export async function GET(req: NextRequest) {
           controller.enqueue(enc.encode(payload));
         }
 
-        // headers iniciais são definidos na Response
         let active = true;
         const interval = setInterval(() => {
           if (!active) return;
@@ -57,8 +57,17 @@ export async function GET(req: NextRequest) {
         async function tick() {
           if (!active) return;
 
-          const where: string[] = ["user_id = ? AND created_at > ?"];
-          const params: any[] = [userId, lastSeen];
+          const where: string[] = [];
+          const params: any[] = [];
+
+          // quando há ?at=, não filtramos por lastSeen, para entregar sempre o registro alvo (se existir)
+          if (at) {
+            where.push("user_id = ? AND at_token = ?");
+            params.push(userId, at);
+          } else {
+            where.push("user_id = ? AND created_at > ?");
+            params.push(userId, lastSeen);
+          }
 
           if (type)   { where.push("type = ?"); params.push(type); }
           if (status) { where.push("status = ?"); params.push(status); }
@@ -76,7 +85,7 @@ export async function GET(req: NextRequest) {
           try {
             const [rows] = await db.query(
               `
-              SELECT id, type, status, description, amount_cents, currency, source, ip, user_agent, icon_url, created_at
+              SELECT id, at_token, type, status, description, amount_cents, currency, source, ip, user_agent, icon_url, created_at
                 FROM user_activity_log
                 ${whereSql}
                ORDER BY created_at ASC
@@ -89,11 +98,11 @@ export async function GET(req: NextRequest) {
               for (const it of items) {
                 send("message", it);
                 const ts = new Date(it.created_at);
-                if (ts > lastSeen) lastSeen = ts;
+                if (!at && ts > lastSeen) lastSeen = ts;
               }
             }
           } catch {
-            // silêncio: mantém o stream vivo
+            // mantém o stream vivo em silêncio
           }
 
           setTimeout(tick, 1500);
@@ -110,7 +119,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
-  return new Response(stream, {
+    return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
@@ -119,9 +128,9 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err: any) {
-    return new Response(`event: error\ndata: ${JSON.stringify({ error: err?.message || "Unauthorized" })}\n\n`, {
-      status: err?.message === "Unauthorized" ? 401 : 500,
-      headers: { "Content-Type": "text/event-stream" },
-    });
+    return new Response(
+      `event: error\ndata: ${JSON.stringify({ error: err?.message || "Unauthorized" })}\n\n`,
+      { status: err?.message === "Unauthorized" ? 401 : 500, headers: { "Content-Type": "text/event-stream" } }
+    );
   }
 }
