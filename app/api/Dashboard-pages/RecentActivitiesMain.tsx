@@ -1757,125 +1757,125 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                                       </div>
                                     </div>
 
-                                   {/* Detalhes avançados */}
-                                                                       <div className="mt-2">
-                                                                         <button
-                                                                           onClick={(e) => { e.stopPropagation(); toggleExpanded(it.id); }}
-                                                                           className="text-[12px] text-white/60 hover:text-white/80 transition inline-flex items-center gap-1"
-                                                                         >
-                                                                           <svg width="14" height="14" viewBox="0 0 20 20" className={`${open ? "rotate-180" : ""} transition`}>
-                                                                             <path fill="currentColor" d="M5 8l5 5l5-5H5z" />
-                                                                           </svg>
-                                                                           Detalhes
-                                                                         </button>
-                                                                         <AnimatePresence initial={false}>
-                                                                           {open && (
-                                                                             <motion.div
-                                                                               layout
-                                                                               key={`details-${it.id}`}
-                                                                               initial={{ height: 0, opacity: 0, filter: "blur(4px)" as any }}
-                                                                               animate={{ height: "auto", opacity: 1, filter: "blur(0px)" as any }}
-                                                                               exit={{ height: 0, opacity: 0, filter: "blur(3px)" as any }}
-                                                                               transition={{ type: "spring", stiffness: 360, damping: 32 }}
-                                                                               className="overflow-hidden"
-                                                                               onClick={(e) => e.stopPropagation()}
-                                                                             >
-                                                                               <div className="mt-2 rounded-lg border border-white/10 bg:black/10 p-3 text-[12px] text-white/70 grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                                                 {/* Identificação */}
-                                                                                 <div><span className="text-white/50">ID:</span> {it.id} <span className="text-white/40">({formatIdTag(it.id)})</span></div>
-                                                                                 <div className="truncate"><span className="text-white/50">Request:</span> <Copyable text={it.request_id}>{maskId(it.request_id)}</Copyable></div>
-                                                                                 <div className="truncate"><span className="text-white/50">Correlation:</span> <Copyable text={it.correlation_id}>{maskId(it.correlation_id)}</Copyable></div>
-                                                                                 <div className="truncate"><span className="text-white/50">Session:</span> <Copyable text={it.session_id}>{maskId(it.session_id)}</Copyable></div>
-                                                                                 <div className="truncate"><span className="text-white/50">Device:</span> <Copyable text={it.device_id}>{maskId(it.device_id)}</Copyable></div>
-                                   
-                                                                                 {/* Segurança & risco */}
-                                                                                 <div className="flex flex-wrap items-center gap-2">
-                                                                                   <span className="text-white/50">KYC:</span> <Badge>{it.kyc_level || "Não há informações"}</Badge>
-                                                                                   <RiskPill score={it.risk_score} />
-                                                                                   {Array.isArray(it.risk_flags) && it.risk_flags.length > 0 && (
-                                                                                     <div className="flex flex-wrap gap-1">
-                                                                                       {it.risk_flags.slice(0, 4).map((f) => (<Badge key={f}>{f}</Badge>))}
-                                                                                       {it.risk_flags.length > 4 && <Badge>+{it.risk_flags.length - 4}</Badge>}
-                                                                                     </div>
-                                                                                   )}
-                                                                                 </div>
-                                   
-                                                                                 {/* Origem & ambiente */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Ambiente:</span>{" "}
-                                                                                   <Badge className={
-                                                                                     it.environment === "prod" ? "border-red-400/40 text-red-300 bg-red-500/10"
-                                                                                       : it.environment === "sandbox" ? "border-yellow-400/40 text-yellow-200 bg-yellow-500/10"
-                                                                                         : "border-white/15 text-white/80"
-                                                                                   }>
-                                                                                     {it.environment || "Não há informações"}
-                                                                                   </Badge>
-                                                                                 </div>
-                                                                                 <div className="truncate"><span className="text-white/50">Origem:</span> {it.source || "Não há informações"}</div>
-                                   
-                                                                                 {/* Localização */}
-                                                                                 <div className="truncate"><span className="text-white/50">IP:</span> <Copyable text={it.ip}>{it.ip || "Não há informações"}</Copyable></div>
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Geo:</span>{" "}
-                                                                                   {[it.location?.city, it.location?.region, it.location?.country].filter(Boolean).join(" · ") || "Não há informações"} {it.location?.asn ? ` · ASN ${it.location.asn}` : ""}
-                                                                                 </div>
-                                   
-                                                                                 {/* Navegador & SO */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Navegador:</span>{" "}
-                                                                                   {(it.user_agent ? parseUA(it.user_agent) : liveUA).browser || "Não há informações"}
-                                                                                 </div>
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">SO:</span>{" "}
-                                                                                   {(it.user_agent ? parseUA(it.user_agent) : liveUA).os || "Não há informações"}
-                                                                                 </div>
-                                                                                 <div className="truncate"><span className="text-white/50">User-Agent:</span> <Copyable text={it.user_agent}>{it.user_agent || "Não há informações"}</Copyable></div>
-                                   
-                                                                                 {/* HTTP & performance */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">HTTP:</span>{" "}
-                                                                                   {[it.http?.method, it.http?.path].filter(Boolean).join(" ") || "Não há informações"}
-                                                                                 </div>
-                                                                                 <div className="truncate"><span className="text-white/50">Status:</span> {it.http?.status ?? "Não há informações"}</div>
-                                                                                 <div className="truncate"><span className="text-white/50">Latency:</span> {typeof it.http?.latency_ms === "number" ? `${it.http?.latency_ms} ms` : "Não há informações"}</div>
-                                                                                 <div className="truncate"><span className="text-white/50">Idempotency-Key:</span> <Copyable text={it.http?.idempotency_key}>{maskId(it.http?.idempotency_key)}</Copyable></div>
-                                   
-                                                                                 {/* TLS */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">TLS:</span>{" "}
-                                                                                   {[it.tls?.version, it.tls?.cipher].filter(Boolean).join(" · ") || "Não há informações"}
-                                                                                 </div>
-                                   
-                                                                                 {/* Pagamento */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Cartão:</span>{" "}
-                                                                                   {[it.payment?.card_brand, it.payment?.card_last4 ? `•••• ${it.payment?.card_last4}` : null].filter(Boolean).join(" · ") || "Não há informações"}
-                                                                                 </div>
-                                                                                 <div className="truncate"><span className="text-white/50">Parcelas:</span> {it.payment?.installment_count ?? "Não há informações"}</div>
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Gateway:</span>{" "}
-                                                                                   {it.payment?.gateway_code || "Não há informações"}{it.payment?.chargeback ? " · chargeback" : ""}
-                                                                                 </div>
-                                   
-                                                                                 {/* Webhook */}
-                                                                                 <div className="truncate">
-                                                                                   <span className="text-white/50">Webhook:</span>{" "}
-                                                                                   {it.webhook?.attempts != null ? `${it.webhook.attempts} tentativa(s)` : "Não há informações"}
-                                                                                   {it.webhook?.last_status ? ` · ${it.webhook.last_status}` : ""}
-                                                                                 </div>
-                                   
-                                                                                 {/* Identidades */}
-                                                                                 <div className="truncate"><span className="text-white/50">Cliente:</span> <Copyable text={it.customer_id}>{maskId(it.customer_id)}</Copyable></div>
-                                                                                 <div className="truncate"><span className="text-white/50">Estabelecimento:</span> <Copyable text={it.merchant_id}>{maskId(it.merchant_id)}</Copyable></div>
-                                   
-                                                                                 {/* Datas */}
-                                                                                 <div className="truncate"><span className="text-white/50">Criado:</span> {new Date(it.created_at).toLocaleString("pt-BR")}</div>
-                                                                                 <div className="truncate"><span className="text-white/50">ISO:</span> {new Date(it.created_at).toISOString()}</div>
-                                                                               </div>
-                                                                             </motion.div>
-                                                                           )}
-                                                                         </AnimatePresence>
-                                                                       </div>
+                                    {/* Detalhes avançados */}
+                                    <div className="mt-2">
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); toggleExpanded(it.id); }}
+                                        className="text-[12px] text-white/60 hover:text-white/80 transition inline-flex items-center gap-1"
+                                      >
+                                        <svg width="14" height="14" viewBox="0 0 20 20" className={`${open ? "rotate-180" : ""} transition`}>
+                                          <path fill="currentColor" d="M5 8l5 5l5-5H5z" />
+                                        </svg>
+                                        Detalhes
+                                      </button>
+                                      <AnimatePresence initial={false}>
+                                        {open && (
+                                          <motion.div
+                                            layout
+                                            key={`details-${it.id}`}
+                                            initial={{ height: 0, opacity: 0, filter: "blur(4px)" as any }}
+                                            animate={{ height: "auto", opacity: 1, filter: "blur(0px)" as any }}
+                                            exit={{ height: 0, opacity: 0, filter: "blur(3px)" as any }}
+                                            transition={{ type: "spring", stiffness: 360, damping: 32 }}
+                                            className="overflow-hidden"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <div className="mt-2 rounded-lg border border-white/10 bg:black/10 p-3 text-[12px] text-white/70 grid grid-cols-1 md:grid-cols-2 gap-2">
+                                              {/* Identificação */}
+                                              <div><span className="text-white/50">ID:</span> {it.id} <span className="text-white/40">({formatIdTag(it.id)})</span></div>
+                                              <div className="truncate"><span className="text-white/50">Request:</span> <Copyable text={it.request_id}>{maskId(it.request_id)}</Copyable></div>
+                                              <div className="truncate"><span className="text-white/50">Correlation:</span> <Copyable text={it.correlation_id}>{maskId(it.correlation_id)}</Copyable></div>
+                                              <div className="truncate"><span className="text-white/50">Session:</span> <Copyable text={it.session_id}>{maskId(it.session_id)}</Copyable></div>
+                                              <div className="truncate"><span className="text-white/50">Device:</span> <Copyable text={it.device_id}>{maskId(it.device_id)}</Copyable></div>
+
+                                              {/* Segurança & risco */}
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <span className="text-white/50">KYC:</span> <Badge>{it.kyc_level || "Não há informações"}</Badge>
+                                                <RiskPill score={it.risk_score} />
+                                                {Array.isArray(it.risk_flags) && it.risk_flags.length > 0 && (
+                                                  <div className="flex flex-wrap gap-1">
+                                                    {it.risk_flags.slice(0, 4).map((f) => (<Badge key={f}>{f}</Badge>))}
+                                                    {it.risk_flags.length > 4 && <Badge>+{it.risk_flags.length - 4}</Badge>}
+                                                  </div>
+                                                )}
+                                              </div>
+
+                                              {/* Origem & ambiente */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">Ambiente:</span>{" "}
+                                                <Badge className={
+                                                  it.environment === "prod" ? "border-red-400/40 text-red-300 bg-red-500/10"
+                                                    : it.environment === "sandbox" ? "border-yellow-400/40 text-yellow-200 bg-yellow-500/10"
+                                                      : "border-white/15 text-white/80"
+                                                }>
+                                                  {it.environment || "Não há informações"}
+                                                </Badge>
+                                              </div>
+                                              <div className="truncate"><span className="text-white/50">Origem:</span> {it.source || "Não há informações"}</div>
+
+                                              {/* Localização */}
+                                              <div className="truncate"><span className="text-white/50">IP:</span> <Copyable text={it.ip}>{it.ip || "Não há informações"}</Copyable></div>
+                                              <div className="truncate">
+                                                <span className="text-white/50">Geo:</span>{" "}
+                                                {[it.location?.city, it.location?.region, it.location?.country].filter(Boolean).join(" · ") || "Não há informações"} {it.location?.asn ? ` · ASN ${it.location.asn}` : ""}
+                                              </div>
+
+                                              {/* Navegador & SO */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">Navegador:</span>{" "}
+                                                {(it.user_agent ? parseUA(it.user_agent) : liveUA).browser || "Não há informações"}
+                                              </div>
+                                              <div className="truncate">
+                                                <span className="text-white/50">SO:</span>{" "}
+                                                {(it.user_agent ? parseUA(it.user_agent) : liveUA).os || "Não há informações"}
+                                              </div>
+                                              <div className="truncate"><span className="text-white/50">User-Agent:</span> <Copyable text={it.user_agent}>{it.user_agent || "Não há informações"}</Copyable></div>
+
+                                              {/* HTTP & performance */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">HTTP:</span>{" "}
+                                                {[it.http?.method, it.http?.path].filter(Boolean).join(" ") || "Não há informações"}
+                                              </div>
+                                              <div className="truncate"><span className="text-white/50">Status:</span> {it.http?.status ?? "Não há informações"}</div>
+                                              <div className="truncate"><span className="text-white/50">Latency:</span> {typeof it.http?.latency_ms === "number" ? `${it.http?.latency_ms} ms` : "Não há informações"}</div>
+                                              <div className="truncate"><span className="text-white/50">Idempotency-Key:</span> <Copyable text={it.http?.idempotency_key}>{maskId(it.http?.idempotency_key)}</Copyable></div>
+
+                                              {/* TLS */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">TLS:</span>{" "}
+                                                {[it.tls?.version, it.tls?.cipher].filter(Boolean).join(" · ") || "Não há informações"}
+                                              </div>
+
+                                              {/* Pagamento */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">Cartão:</span>{" "}
+                                                {[it.payment?.card_brand, it.payment?.card_last4 ? `•••• ${it.payment?.card_last4}` : null].filter(Boolean).join(" · ") || "Não há informações"}
+                                              </div>
+                                              <div className="truncate"><span className="text-white/50">Parcelas:</span> {it.payment?.installment_count ?? "Não há informações"}</div>
+                                              <div className="truncate">
+                                                <span className="text-white/50">Gateway:</span>{" "}
+                                                {it.payment?.gateway_code || "Não há informações"}{it.payment?.chargeback ? " · chargeback" : ""}
+                                              </div>
+
+                                              {/* Webhook */}
+                                              <div className="truncate">
+                                                <span className="text-white/50">Webhook:</span>{" "}
+                                                {it.webhook?.attempts != null ? `${it.webhook.attempts} tentativa(s)` : "Não há informações"}
+                                                {it.webhook?.last_status ? ` · ${it.webhook.last_status}` : ""}
+                                              </div>
+
+                                              {/* Identidades */}
+                                              <div className="truncate"><span className="text-white/50">Cliente:</span> <Copyable text={it.customer_id}>{maskId(it.customer_id)}</Copyable></div>
+                                              <div className="truncate"><span className="text-white/50">Estabelecimento:</span> <Copyable text={it.merchant_id}>{maskId(it.merchant_id)}</Copyable></div>
+
+                                              {/* Datas */}
+                                              <div className="truncate"><span className="text-white/50">Criado:</span> {new Date(it.created_at).toLocaleString("pt-BR")}</div>
+                                              <div className="truncate"><span className="text-white/50">ISO:</span> {new Date(it.created_at).toISOString()}</div>
+                                            </div>
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
