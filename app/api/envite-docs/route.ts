@@ -62,9 +62,124 @@ function isAllowedMime(dataUrl: string, allowPdf = false): boolean {
   return false;
 }
 
+/** ===================== Concurrency / Retry / Pool Helpers ===================== */
+
+/** Semáforo simples para limitar chamadas simultâneas ao banco a partir desta rota */
+class Semaphore {
+  private queue: Array<() => void> = [];
+  private count = 0;
+  constructor(private max: number) {}
+  async acquire() {
+    if (this.count < this.max) {
+      this.count++;
+      return;
+    }
+    await new Promise<void>((resolve) => this.queue.push(resolve));
+    this.count++;
+  }
+  release() {
+    this.count = Math.max(0, this.count - 1);
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+
+// Reutiliza uma instância global (hot reload friendly)
+const g: any = globalThis as any;
+if (!g.__ENVITE_DOCS_SEM__) g.__ENVITE_DOCS_SEM__ = new Semaphore(Number(process.env.ENVITEDOCS_MAX_CONCURRENCY || 6));
+const SEM: Semaphore = g.__ENVITE_DOCS_SEM__;
+
+/** Detecta erros de conexão/transientes que merecem retry */
+function isTransientConnErr(err: any): boolean {
+  const code = String(err?.code || "").toUpperCase();
+  const msg = String(err?.message || "").toLowerCase();
+  return (
+    code === "ER_CON_COUNT_ERROR" || // 1040 too many connections
+    code === "PROTOCOL_CONNECTION_LOST" ||
+    code === "PROTOCOL_PACKETS_OUT_OF_ORDER" ||
+    code === "ECONNRESET" ||
+    code === "ECONNREFUSED" ||
+    msg.includes("too many connections") ||
+    msg.includes("socket hang up")
+  );
+}
+
+/** Backoff exponencial com jitter */
+function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
+function backoffDelay(attempt: number) {
+  const base = 150; // ms
+  const cap = 1200;
+  const exp = Math.min(cap, base * Math.pow(2, attempt));
+  const jitter = Math.random() * 120;
+  return exp + jitter;
+}
+
+/** Executa query com getConnection/release + retry + semáforo */
+async function withConnQuery<T = any[]>(
+  sql: string,
+  params?: any[],
+  opts?: { maxRetries?: number; timeoutMs?: number }
+): Promise<[T, any]> {
+  const maxRetries = Math.max(0, opts?.maxRetries ?? 3);
+  const timeoutMs = Math.max(0, opts?.timeoutMs ?? 8000);
+
+  let lastErr: any;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    await SEM.acquire();
+    let conn: any = null;
+    try {
+      conn = await (db as any).getConnection?.();
+      if (!conn) {
+        // fallback: se db não for Pool, usa direto (mantém compatibilidade)
+        const p = (db as any).query(sql, params);
+        const res = await Promise.race([
+          p,
+          sleep(timeoutMs).then(() => { throw new Error("DB query timeout"); }),
+        ]) as [T, any];
+        return res;
+      }
+      const p = conn.query(sql, params);
+      const res = await Promise.race([
+        p,
+        sleep(timeoutMs).then(() => { throw new Error("DB query timeout"); }),
+      ]) as [T, any];
+      return res;
+    } catch (err: any) {
+      lastErr = err;
+      if (conn) { try { conn.release(); } catch {} }
+      SEM.release();
+
+      if (attempt < maxRetries && isTransientConnErr(err)) {
+        const delay = backoffDelay(attempt);
+        await sleep(delay);
+        continue; // tenta novamente
+      }
+      // Erro definitivo
+      throw err;
+    } finally {
+      // release em sucesso
+      if (conn) { try { conn.release(); } catch {} }
+      // release extra só se não fizemos no catch
+      try { SEM.release(); } catch {}
+    }
+  }
+  throw lastErr;
+}
+
+/** ===================== Mini-cache para o GET ===================== */
+/** Cache curta para evitar estouro por F5. TTL default: 5s */
+type LastPendingCacheVal = { last: any | null; status: string | null; locked: boolean; at: number };
+if (!g.__ENVITE_DOCS_CACHE__) g.__ENVITE_DOCS_CACHE__ = new Map<number, LastPendingCacheVal>();
+const CACHE: Map<number, LastPendingCacheVal> = g.__ENVITE_DOCS_CACHE__;
+const CACHE_TTL_MS = Number(process.env.ENVITEDOCS_CACHE_TTL_MS || 5000);
+
+// Deduplicação de requisições em voo por uid
+if (!g.__ENVITE_DOCS_INFLIGHT__) g.__ENVITE_DOCS_INFLIGHT__ = new Map<number, Promise<{ last: any; status: string | null; locked: boolean }>>();
+const INFLIGHT: Map<number, Promise<{ last: any; status: string | null; locked: boolean }>> = g.__ENVITE_DOCS_INFLIGHT__;
+
 /** ===================== DB Helpers ===================== */
 async function fetchFaceSessionByLoginSid(loginSid: string) {
-  const [rows] = await db.query(
+  const [rows] = await withConnQuery<any[]>(
     `
       SELECT
         fs.id           AS face_session_id,
@@ -93,20 +208,46 @@ async function fetchFaceSessionByLoginSid(loginSid: string) {
 
 /** Retorna o último registro e um flag "locked" (in_review/approved) */
 async function getLastPendingByUser(userId: number) {
-  const [rows] = await db.query(
-    `
-      SELECT id, status, created_at, updated_at
-      FROM wzb_pending_docs
-      WHERE user_id = ?
-      ORDER BY id DESC
-      LIMIT 1
-    `,
-    [userId]
-  );
-  const last = (rows as any[])[0] || null;
-  const status = last?.status || null;
-  const locked = status === "in_review" || status === "approved";
-  return { last, status, locked };
+  // 1) tenta cache quente
+  const now = Date.now();
+  const cached = CACHE.get(userId);
+  if (cached && (now - cached.at) <= CACHE_TTL_MS) {
+    return { last: cached.last, status: cached.status, locked: cached.locked };
+  }
+
+  // 2) deduplica chamadas simultâneas
+  const existing = INFLIGHT.get(userId);
+  if (existing) {
+    const r = await existing;
+    return r;
+  }
+
+  const promise = (async () => {
+    const [rows] = await withConnQuery<any[]>(
+      `
+        SELECT id, status, created_at, updated_at
+        FROM wzb_pending_docs
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+      `,
+      [userId]
+    );
+    const last = (rows as any[])[0] || null;
+    const status = last?.status || null;
+    const locked = status === "in_review" || status === "approved";
+
+    CACHE.set(userId, { last, status, locked, at: Date.now() });
+    return { last, status, locked };
+  })();
+
+  INFLIGHT.set(userId, promise);
+  try {
+    const out = await promise;
+    return out;
+  } finally {
+    INFLIGHT.delete(userId);
+  }
 }
 
 /** ===================== GET /api/envite-docs =====================
@@ -128,6 +269,16 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("[ENVITE-DOCS GET ERROR]", err);
+    // mensagem mais clara se estourar conexão
+    if (isTransientConnErr(err)) {
+      return json(
+        {
+          error: "Serviço momentaneamente ocupado. Tente novamente em instantes.",
+          code: "DB_BUSY",
+        },
+        503
+      );
+    }
     return json({ error: err?.message || "Erro interno" }, 500);
   }
 }
@@ -203,9 +354,9 @@ export async function POST(req: NextRequest) {
     const face = await fetchFaceSessionByLoginSid(sid);
     if (!face) return json({ error: "Sessão facial não encontrada para este login." }, 404);
 
-    // Insert
+    // Insert (com retry/semáforo/conn control)
     try {
-      const [insertRes] = await db.query(
+      const [insertRes] = await withConnQuery<any>(
         `
           INSERT INTO wzb_pending_docs (
             user_id, name, email, cpf_or_cnpj, phone,
@@ -223,8 +374,12 @@ export async function POST(req: NextRequest) {
           user_id, name, email, cpfOrCnpj, phone,
           face.login_sid, face.internal_token, face.w_code,
           front_b64, back_b64, selfie_b64
-        ]
+        ],
+        { maxRetries: 3, timeoutMs: 15000 }
       );
+
+      // invalida cache para refletir o novo status imediatamente
+      try { CACHE.delete(user_id); } catch {}
 
       return json({
         success: true,
@@ -247,6 +402,12 @@ export async function POST(req: NextRequest) {
               "MySQL: SET GLOBAL max_allowed_packet=67108864; e em [mysqld] max_allowed_packet=64M.",
           },
           413
+        );
+      }
+      if (isTransientConnErr(dbErr)) {
+        return json(
+          { error: "Serviço de banco ocupado. Tente novamente em instantes.", code: "DB_BUSY" },
+          503
         );
       }
       throw dbErr;

@@ -28,6 +28,7 @@ type Activity = {
   user_agent: string | null;
   icon_url?: string | null;
   created_at: string;
+  at_type?: number; // 👈 novo
 
   // ====== Campos avançados para auditoria ======
   request_id?: string | null;
@@ -87,6 +88,86 @@ interface Props {
 }
 
 /* ---------------- Small helpers ---------------- */
+
+// ===== HELP MAP (topo do arquivo) =====
+export const HELP_BY_AT_TYPE: Record<number, [string, string, string]> = {
+  1: ["Pix não recebido ainda", "Prazo de compensação do Pix", "Como localizar um comprovante de Pix"],
+  2: ["Cancelar um Pix feito por engano", "Como solicitar estorno de Pix", "Disputa de transação Pix"],
+  3: ["Agendar/editar transferência", "Rastreio e comprovante", "Taxas e limites de transferência"],
+  4: ["Denunciar golpe e pedir Pix de volta", "Bloqueio preventivo da conta", "Como reforçar a segurança"],
+  5: ["Compra não reconhecida (cartão)", "Como abrir contestação/chargeback", "Bloqueio temporário do cartão"],
+  0: ["Dúvidas sobre a conta", "Alterar dados e limites", "Falar com o suporte"],
+};
+
+// Cada índice corresponde à mesma posição do HELP_BY_AT_TYPE
+export const HELP_LINKS_BY_AT_TYPE: Record<number, [string, string, string]> = {
+  1: [
+    "/ajuda/pix/nao-recebido",
+    "/ajuda/pix/prazo-compensacao",
+    "/ajuda/pix/comprovante",
+  ],
+  2: [
+    "/ajuda/pix/cancelar",
+    "/ajuda/pix/estorno",
+    "/ajuda/pix/disputa",
+  ],
+  3: [
+    "/ajuda/transferencias/agendar-editar",
+    "/ajuda/transferencias/rastreio-comprovante",
+    "/ajuda/transferencias/taxas-limites",
+  ],
+  4: [
+    "/ajuda/seguranca/denunciar-golpe",
+    "/ajuda/seguranca/bloqueio-preventivo",
+    "/ajuda/seguranca/reforcar-seguranca",
+  ],
+  5: [
+    "/ajuda/cartao/compra-nao-reconhecida",
+    "/ajuda/cartao/contestacao-chargeback",
+    "/ajuda/cartao/bloqueio-temporario",
+  ],
+  0: [
+    "/ajuda/conta/duvidas",
+    "/ajuda/conta/alterar-dados-limites",
+    "/suporte",
+  ],
+};
+
+// Helper que devolve pares { label, href } respeitando o HELP_BY_AT_TYPE
+export function getHelpItemsFor(
+  atType?: number | null
+): Array<{ label: string; href: string }> {
+  const key = Number.isFinite(Number(atType)) ? Number(atType) : 0;
+  const labels = HELP_BY_AT_TYPE[key] ?? HELP_BY_AT_TYPE[0];
+  const hrefs = HELP_LINKS_BY_AT_TYPE[key] ?? HELP_LINKS_BY_AT_TYPE[0];
+  // Garante pareamento por índice; se faltar link, cai no último ou em /ajuda
+  return labels.map((label, i) => ({
+    label,
+    href: hrefs[i] || hrefs[hrefs.length - 1] || "/ajuda",
+  }));
+}
+
+function HelpCard({ atType = 0 }: { atType?: number | null }) {
+  const key = Number.isFinite(Number(atType)) ? Number(atType) : 0;
+  const labels: Record<number, string> = {
+    1: "Precisa de ajuda? Pix",
+    2: "Precisa de ajuda? Estorno Pix",
+    3: "Precisa de ajuda? Transferências",
+    4: "Precisa de ajuda? Segurança",
+    5: "Precisa de ajuda? Cartão",
+    0: "Precisa de ajuda?",
+  };
+  const label = labels[key] ?? labels[0];
+  return (
+    <span className="inline-flex items-center gap-2 text-white/60">
+      <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden>
+        <path fill="currentColor" d="M10 2a8 8 0 108 8a8 8 0 00-8-8Zm1 13H9v-2h2Zm0-4H9V5h2Z" />
+      </svg>
+      {label}
+    </span>
+  );
+}
+
 const statusStyles: Record<string, string> = {
   success: "bg-emerald-500/10 text-emerald-300 border border-emerald-400/30",
   failed: "bg-red-500/10 text-red-300 border border-red-400/30",
@@ -183,6 +264,72 @@ function useIsMobile(breakpointPx = 1250) {
   return isMobile;
 }
 
+
+// Helpers: normaliza row plano -> shape usado pelo JSX
+function normalizeActivity(row: any) {
+  const riskFlags = Array.isArray(row.risk_flags)
+    ? row.risk_flags
+    : row.risk_flags
+      ? (() => { try { return JSON.parse(row.risk_flags); } catch { return []; } })()
+      : [];
+
+  return {
+    ...row,
+    // blocos aninhados esperados pelo seu JSX
+    location: {
+      city: row.location_city || null,
+      region: row.location_region || null,
+      country: row.location_country || null,
+      asn: row.location_asn ?? null,
+    },
+    http: {
+      method: row.http_method || null,
+      path: row.http_path || null,
+      status: row.http_status ?? null,
+      latency_ms: row.http_latency_ms ?? null,
+      idempotency_key: row.http_idempotency_key || null,
+    },
+    tls: {
+      version: row.tls_version || null,
+      cipher: row.tls_cipher || null,
+    },
+    payment: {
+      card_brand: row.payment_card_brand || null,
+      card_last4: row.payment_card_last4 || null,
+      installment_count: row.payment_installment_count ?? null,
+      gateway_code: row.payment_gateway_code || null,
+      chargeback: !!row.payment_chargeback,
+    },
+    webhook: {
+      attempts: row.webhook_attempts ?? null,
+      last_status: row.webhook_last_status || null,
+    },
+    kyc_level: row.kyc_level || null,
+    risk_score: row.risk_score ?? null,
+    risk_flags: riskFlags,
+  };
+}
+
+// Upsert no estado (preserva expansão/ordem por created_at desc)
+function upsertActivities(prev: any[], incoming: any[]) {
+  const map = new Map<number, any>();
+  for (const it of prev) map.set(it.id, it);
+  for (const raw of incoming) {
+    const n = normalizeActivity(raw);
+    const old = map.get(n.id);
+    // merge raso → campos que eram null passam a ter valor
+    map.set(n.id, { ...(old || {}), ...n });
+  }
+  const arr = Array.from(map.values());
+  arr.sort((a, b) => {
+    const ad = new Date(a.created_at).getTime();
+    const bd = new Date(b.created_at).getTime();
+    if (bd !== ad) return bd - ad;
+    return (b.id || 0) - (a.id || 0);
+  });
+  return arr;
+}
+
 /* ---------------- UA parsing (tempo real) ---------------- */
 type UAInfo = { browser: string; os: string; version?: string };
 
@@ -200,7 +347,10 @@ function parseFromUAString(uaRaw?: string | null): UAInfo {
 
   const pick = (name: string, re: RegExp) => {
     const m = ua.match(re);
-    if (m) { browser = name; version = (m[1] || m[2] || "") as string; }
+    if (m) {
+      browser = name;
+      version = (m[1] || m[2] || "").trim();
+    }
   };
 
   if (/edg(a|ios)?\//i.test(ua)) pick("Edge", /Edg(?:A|iOS|)\/([\d.]+)/);
@@ -213,23 +363,29 @@ function parseFromUAString(uaRaw?: string | null): UAInfo {
   else if (/chrome\//i.test(ua) && !/edg|opr|yabrowser|vivaldi/i.test(ua)) pick("Chrome", /Chrome\/([\d.]+)/);
   else if (/safari/i.test(ua) && /version\//i.test(ua)) pick("Safari", /Version\/([\d.]+)/);
 
-  let os = "Desconhecido";
+  // OS: não coloca "Desconhecido" — se não detectar, fica vazio
+  let os = "";
   if (u.includes("windows")) {
     os = "Windows";
   } else if (u.includes("android")) {
     const m = ua.match(/Android\s([\d.]+)/i);
-    os = `Android${m ? " " + m[1] : ""}`;
+    os = `Android${m ? " " + m[1] : ""}`.trim();
   } else if (/iphone|ipad|ipod|ios/i.test(ua)) {
     const m = ua.match(/OS\s([\d_]+)/i);
-    os = `iOS${m ? " " + m[1].replace(/_/g, ".") : ""}`;
+    os = `iOS${m ? " " + m[1].replace(/_/g, ".") : ""}`.trim();
   } else if (u.includes("mac os x") || u.includes("macintosh")) {
     const m = ua.match(/Mac OS X\s([\d_]+)/i);
-    os = `macOS${m ? " " + m[1].replace(/_/g, ".") : ""}`;
+    os = `macOS${m ? " " + m[1].replace(/_/g, ".") : ""}`.trim();
   } else if (u.includes("linux")) {
     os = "Linux";
   }
 
-  return { browser, os, version };
+  // Se version for vazia, não retorna a propriedade (não aparece)
+  return {
+    browser: browser || "",
+    os: os || "",
+    ...(version ? { version } : {}),
+  };
 }
 
 export function parseUA(ua?: string | null): UAInfo {
@@ -248,7 +404,7 @@ export function useLiveUA(): UAInfo {
           const uaData = anyNav.userAgentData;
           const brands: Array<{ brand: string; version: string }> = uaData.brands || uaData.uaList || [];
           let brand =
-            brands.find(b => /Chrome|Chromium|Edge|Opera|Brave|Vivaldi|Samsung|YaBrowser|Yandex/i.test(b.brand))?.brand ||
+            brands.find((b: any) => /Chrome|Chromium|Edge|Opera|Brave|Vivaldi|Samsung|YaBrowser|Yandex/i.test(b.brand))?.brand ||
             brands[brands.length - 1]?.brand || "";
           const high = await (uaData.getHighEntropyValues?.(["platform", "platformVersion", "uaFullVersion"]).catch(() => null));
           const platform = (high?.platform || uaData.platform || navigator.platform || "").toString();
@@ -452,10 +608,12 @@ function resolveTypeAlias(s: string): string | undefined {
 }
 
 function resolveCurrency(s: string): string | undefined {
-  const raw = s.toUpperCase().replace(/[^A-Z$€]|/g, "");
+  const raw = s.toUpperCase().replace(/[^A-Z$€]/g, ""); // ✅ corrigido
   if (/^[A-Z]{3}$/.test(raw)) return raw;
+
   const n = normalize(s).replace(/\s+/g, "");
-  if (n in CURRENCY_ALIASES) return CURRENCY_ALIASES[n];
+  if (n in CURRENCY_ALIASES) return CURRENCY_ALIASES[n as keyof typeof CURRENCY_ALIASES];
+
   if (s.trim() === "$") return "USD";
   if (s.trim() === "€") return "EUR";
   if (s.trim().toUpperCase() === "R$") return "BRL";
@@ -746,7 +904,7 @@ function MenuSelect({ value, onChange, placeholder, options, className = "", pla
         ref={btnRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="w-full rounded-md bg-[#050505] border border-white/10 px-3 py-3 text-sm text-white/90 hover:bg-white/5 transition flex items-center justify-between"
+        className="w-full rounded-md bg-[#040404] border border-white/10 px-3 py-3 text-sm text-white/90 hover:bg-white/5 transition flex items-center justify-between"
         aria-haspopup="listbox"
         aria-expanded={open}
       >
@@ -765,7 +923,7 @@ function MenuSelect({ value, onChange, placeholder, options, className = "", pla
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: placement === "top" ? 6 : -6, scale: 0.98 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-            className={`absolute z-20 ${placement === "top" ? "bottom-full mb-1" : "mt-1"} w-64 rounded-md border border-white/10 bg-[#050505] shadow-2xl backdrop-blur-sm overflow-hidden`}
+            className={`absolute z-20 ${placement === "top" ? "bottom-full mb-1" : "mt-1"} w-64 rounded-md border border-white/10 bg-[#040404] shadow-2xl backdrop-blur-sm overflow-hidden`}
           >
             {options.map((opt) => {
               const active = value === opt.value;
@@ -855,7 +1013,7 @@ function AIPalette({
       try {
         setLoading(true);
         const params = new URLSearchParams({ page: "1", pageSize: "30", q: query.trim() });
-        const res = await fetch(`/api/recent-activities?${params.toString()}`, { credentials: "include", signal: ac.signal });
+        const res = await fetch(`/api/recent-activities?${params.toString()}`, { credentials: "include", signal: ac.signal as AbortSignal });
         if (res.ok) {
           const json = await res.json();
           const base: Activity[] = Array.isArray(json.items) ? json.items : [];
@@ -908,7 +1066,7 @@ function AIPalette({
         />
 
         <motion.div
-          className="relative z-[61] w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl border border-white/10 bg-[#050505]/95 shadow-2xl"
+          className="relative z-[61] w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl border border-white/10 bg-[#040404]/95 shadow-2xl"
           initial={{ y: 20, scale: 0.98, opacity: 0 }}
           animate={{ y: 0, scale: 1, opacity: 1 }}
           exit={{ y: 10, scale: 0.98, opacity: 0 }}
@@ -926,7 +1084,7 @@ function AIPalette({
                 value={maskHashUI(query)}
                 onChange={(e) => { setQuery(unmaskHashUI(e.target.value)); setActiveIdx(-1); }}
                 placeholder="Realize a busca de suas atividades aqui"
-                className="w-full rounded-lg bg-[#050505] border border-white/10 px-4 py-4 text-sm outline-none focus:border-white/20 pr-10"
+                className="w-full rounded-lg bg-[#040404] border border-white/10 px-4 py-4 text-sm outline-none focus:border-white/20 pr-10"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -986,7 +1144,12 @@ function AIPalette({
                         onClick={() => onPick({ kind: "id", id: r.id, display: formatIdTag(r.id), activity: r })}
                         className={`w-full text-left px-4 py-3 transition flex items-center gap-3 ${active ? "bg-white/10" : "hover:bg-white/5"}`}
                       >
-                        <img src={icon} alt={r.type} className="h-8 w-8 rounded-full object-cover" />
+                        <img
+                          src={icon}
+                          alt={r.type}
+                          className="h-8 w-8 rounded-full object-cover"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/icons/activity.svg"; }}
+                        />
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2 text-sm">
                             <span className="font-medium text-white/90">{r.type}</span>
@@ -995,7 +1158,7 @@ function AIPalette({
                             <span className="text-[11px] text-white/40">{new Date(r.created_at).toLocaleString("pt-BR")}</span>
                           </div>
                           <div className="text-white/70 text-sm truncate">{r.description || "Não há informações"}</div>
-                          <div className="text:[11px] text-white/40">{device.browser} · {device.os} · {r.ip || "Não há informações"}</div>
+                          <div className="text-[11px] text-white/40">{device.browser} · {device.os} · {r.ip || "Não há informações"}</div>
                         </div>
                         <div className="text-white/60 text-sm">{formatAmount(r.amount_cents, r.currency)}</div>
                         <span className="ml-3 rounded border border-white/10 px-2 py-[2px] text-[11px] text-white/70">
@@ -1036,7 +1199,7 @@ function AIPalette({
 /* ---------------- Skeleton (3 cards com shimmer) ---------------- */
 function SkeletonCard() {
   return (
-    <div className="relative h-[104px] rounded-xl border border-white/10 bg-[#050505] overflow-hidden p-3">
+    <div className="relative h-[104px] rounded-xl border border-white/10 bg-[#040404] overflow-hidden p-3">
       <div className="flex items-start gap-3">
         <div className="h-12 w-12 rounded-full bg-white/5" />
         <div className="flex-1 min-w-0">
@@ -1090,7 +1253,6 @@ const cardVariants: Variants = {
   },
 };
 
-/* ---------------- InfoSheet ---------------- */
 function InfoSheet({
   open,
   onClose,
@@ -1111,6 +1273,10 @@ function InfoSheet({
   if (!open) return null;
 
   const it = activity;
+
+  const helpKey = Number.isFinite(Number(it?.at_type)) ? Number(it?.at_type) : 0;
+  const items = HELP_BY_AT_TYPE[helpKey] ?? HELP_BY_AT_TYPE[0];
+
   return (
     <AnimatePresence>
       <motion.aside
@@ -1122,7 +1288,7 @@ function InfoSheet({
         <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
         <motion.div
-          className="w-full max-w-[550px] h-full bg-[#050505] border-l border-white/10 shadow-2xl flex flex-col"
+          className="w-full max-w-[550px] h-full bg-[#000000] border-l border-white/10 shadow-2xl flex flex-col"
           initial={{ x: 40, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: 20, opacity: 0 }}
@@ -1130,7 +1296,7 @@ function InfoSheet({
         >
           <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
             <div className="min-w-0">
-              <div className="text-xs text-white/40">Transferência de dinheiro</div>
+              <div className="text-xs text-white/40">Informações da atividade</div>
               <div className="mt-1 flex items-center gap-2">
                 <div className="text-lg font-semibold text-white/90 truncate">{it?.type || "Operação"}</div>
                 <SafeStatus value={it?.status} />
@@ -1174,7 +1340,7 @@ function InfoSheet({
               </div>
             ) : (
               <>
-                <section className="rounded-lg border border-white/10 bg-black/10 p-4">
+                <section className="rounded-lg border border-white/10 bg-[#040404] p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
@@ -1191,25 +1357,25 @@ function InfoSheet({
                   </div>
                 </section>
 
-                <section className="rounded-lg border border-white/10 bg-black/10 p-4 space-y-1">
+                <section className="rounded-lg border border-white/10 bg-[#040404] p-4 space-y-1">
                   <div className="text-xs text-white/40">Meio de pagamento</div>
                   <div className="text-sm text-white/80">
                     {it.payment?.gateway_code
-                      ? `Saldo disponível via ${it.payment.gateway_code}`
+                      ? `Pagamento via ${it.payment.gateway_code}`
                       : it.source
                         ? `Origem: ${it.source}`
                         : "Não há informações"}
                   </div>
                 </section>
 
-                <section className="rounded-lg border border-white/10 bg-black/10 p-4 space-y-1">
+                <section className="rounded-lg border border-white/10 bg-[#040404] p-4 space-y-1">
                   <div className="text-xs text-white/40">Tipo de transferência</div>
                   <div className="text-sm text-white/80">
                     {it.type?.startsWith("payment") ? "Pagamento" : it.type || "Não há informações"}
                   </div>
                 </section>
 
-                <section className="rounded-lg border border-white/10 bg-black/10 p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <section className="rounded-lg border border-white/10 bg-[#040404] p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <div className="text-xs text-white/40">Para</div>
                     <div className="text-sm text-white/80">
@@ -1224,25 +1390,59 @@ function InfoSheet({
                   </div>
                 </section>
 
-                <section className="rounded-lg border border-white/10 bg-black/10 p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <section className="rounded-lg border border-white/10 bg-[#040404] p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   <div><span className="text-white/50">ID:</span> {it.id}</div>
                   <div><span className="text-white/50">Criado:</span> {new Date(it.created_at).toLocaleString("pt-BR")}</div>
                   <div><span className="text-white/50">IP:</span> {it.ip || "Não há informações"}</div>
                   <div><span className="text-white/50">UA:</span> <Copyable text={it.user_agent}>{maskId(it.user_agent)}</Copyable></div>
                   <div><span className="text-white/50">KYC:</span> {it.kyc_level || "Não há informações"}</div>
-                  <div><span className="text-white/50">Parcelas:</span> {it.payment?.installment_count ?? "Não há informações"}</div>
+                  <div><span className="text-white/50">Parcelas:</span> {it.payment?.installment_count?? "Não há informações"}x</div>
                   <div className="sm:col-span-2">
                     <span className="text-white/50">Descrição:</span>{" "}
                     <span className="text-white/80">{it.description || "Não há informações"}</span>
                   </div>
                 </section>
 
-                <section className="rounded-lg border border-white/10 bg-black/10 p-4">
-                  <div className="text-xs text-white/40 mb-2">Precisa de ajuda?</div>
-                  <ul className="text-sm text-white/75 list-disc list-inside space-y-1">
-                    <li>Pix não recebido ainda</li>
-                    <li>Cancelar um Pix feito por engano</li>
-                    <li>Denunciar golpe e pedir Pix de volta</li>
+                <section className="rounded-lg border border-white/10 bg-[#040404] p-4">
+                  <div className="text-xs text-white/40 mb-3">
+                    <HelpCard atType={it?.at_type} />
+                  </div>
+
+                  {/* espaçamento vertical levemente reduzido */}
+                  <ul className="text-sm text-white/75 list-none p-0 m-0 -my-0.5">
+                    {getHelpItemsFor(it?.at_type).map(({ label, href }, i) => (
+                      <li
+                        key={i}
+                        className="p-0 m-0 py-1.5 sm:py-2 first:pt-0 last:pb-0"
+                      >
+                        <a
+                          href={href}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 hover:text-white transition"
+                          aria-label={`Abrir ajuda: ${label}`}
+                        >
+                          <span className="whitespace-normal break-words">{label}</span>
+
+                          {/* Ícone de redirect no fim */}
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 20 20"
+                            aria-hidden
+                            className="opacity-80 shrink-0 translate-y-[1px]"
+                          >
+                            <path
+                              fill="currentColor"
+                              d="M12 3h5v5h-2V6.414l-7.293 7.293-1.414-1.414L13.586 5H12z"
+                            />
+                            <path
+                              fill="currentColor"
+                              d="M5 5h6v2H7v8h8v-4h2v6H5z"
+                            />
+                          </svg>
+                        </a>
+                      </li>
+                    ))}
                   </ul>
                 </section>
               </>
@@ -1336,8 +1536,10 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
         cache: "no-store",
       });
       if (!res.ok) throw new Error(`Falha ao carregar: ${res.status} Tente novamente.`);
+      // DEPOIS (com normalizeActivity):
       const json = await res.json();
-      const list: Activity[] = Array.isArray(json.items) ? json.items : [];
+      const rawList: Activity[] = Array.isArray(json.items) ? json.items : [];
+      const list = rawList.map(normalizeActivity);
       setTotal(Number(json.total || 0));
       setItems(list);
       const nextSeen = new Set<number>(seenIdsRef.current);
@@ -1376,9 +1578,10 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
     const es = new EventSource(`/api/recent-activities/stream?${sp.toString()}`, { withCredentials: true });
     esRef.current = es;
 
+    // DEPOIS (com normalizeActivity):
     es.addEventListener("message", (ev) => {
       try {
-        const activity = JSON.parse(ev.data) as Activity;
+        const activity = normalizeActivity(JSON.parse(ev.data));
         const idNum = Number(activity?.id);
         if (!Number.isFinite(idNum)) return;
         if (seenIdsRef.current.has(idNum)) return;
@@ -1537,7 +1740,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                     <button
                       type="button"
                       onClick={() => setAiOpen(true)}
-                      className="w-full rounded-md bg-[#050505] border border-white/10 px-3 sm:px-4 py-3 sm:py-4 text-sm text-white/60 hover:bg-white/5 transition flex items-center justify-between"
+                      className="w-full rounded-md bg-[#040404] border border-white/10 px-3 sm:px-4 py-3 sm:py-4 text-sm text-white/60 hover:bg-white/5 transition flex items-center justify-between"
                     >
                       <span className={(selectedId != null || qDebounced) ? "text-white/90 truncate" : "text-white/40"}>
                         {maskHashUI(selectedId != null ? formatIdTag(selectedId) : qDebounced) || "Busque pelas suas atividades aqui"}
@@ -1567,7 +1770,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setMobileFiltersOpen(v => !v)}
-                    className="hidden max-[1249px]:inline-flex items-center justify-center rounded-md border border-white/10 bg-[#050505] px-3 sm:px-4 py-3 sm:py-4 text-sm font-medium text-white/80 hover:bg-white/5 transition whitespace-nowrap"
+                    className="hidden max-[1249px]:inline-flex items-center justify-center rounded-md border border-white/10 bg-[#040404] px-3 sm:px-4 py-3 sm:py-4 text-sm font-medium text-white/80 hover:bg-white/5 transition whitespace-nowrap"
                     aria-expanded={mobileFiltersOpen}
                     aria-controls="mobile-filters"
                     title="Filtros"
@@ -1625,15 +1828,21 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                       { value: "system", label: "system" },
                     ]}
                   />
+                  <style jsx>{`
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
+`}</style>
+
                   <input
                     type="date"
-                    className="rounded-md bg-[#050505] border border-white/10 px-3 py-3 text-sm"
+                    className="rounded-md bg-[#040404] border border-white/10 px-3 py-3 text-sm"
                     value={from}
                     onChange={(e) => { setPage(1); setFrom(e.target.value); }}
                   />
                   <input
                     type="date"
-                    className="rounded-md bg-[#050505] border border-white/10 px-3 py-3 text-sm"
+                    className="rounded-md bg-[#040404] border border-white/10 px-3 py-3 text-sm"
                     value={to}
                     onChange={(e) => { setPage(1); setTo(e.target.value); }}
                   />
@@ -1665,8 +1874,13 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                 {!loading && !error && displayedItems.length === 0 && (
                   <div className="py-16">
                     <div className="flex flex-col items-center justify-center text-center">
-                      <img src="https://www.wyzebank.com/error_image.png" alt="" className="h-70 text-white/30" />
-                      <p className="mt-3 text-[17px] text-white/30 fonte-medium user-none">
+                      <img
+                        src="https://www.wyzebank.com/error_image.png"
+                        alt=""
+                        className="h-24 w-24 object-contain opacity-60"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                      />
+                      <p className="mt-3 text-[17px] text-white/30 font-medium">
                         Nenhuma atividade encontrada.
                       </p>
                     </div>
@@ -1701,7 +1915,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                               whileHover={{ y: -2 }}
                               whileTap={{ scale: 0.995 }}
                               viewport={{ once: true, margin: "-80px" }}
-                              className="group rounded-xl border border-white/10 bg-[#050505] p-3 hover:border-white/20 hover:bg-[#0c0c0c] transition"
+                              className="group rounded-xl border border-white/10 bg-[#040404] p-3 hover:border-white/20 hover:bg-[#0c0c0c] transition"
                             >
                               <div
                                 role="button"
@@ -1715,7 +1929,12 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                                     whileHover={{ y: -1 }}
                                     transition={{ type: "spring", stiffness: 400, damping: 26 }}
                                   >
-                                    <img src={icon} alt={it.type} className="h-12 w-12 rounded-full object-cover" />
+                                    <img
+                                      src={icon}
+                                      alt={it.type}
+                                      className="h-12 w-12 rounded-full object-cover"
+                                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/icons/activity.svg"; }}
+                                    />
                                     {it.status === "success" && (
                                       <motion.span
                                         className="pointer-events-none absolute inset-0 rounded-full border border-emerald-400/30"
@@ -1749,11 +1968,8 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                                         {formatAmount(it.amount_cents, it.currency)}
                                       </div>
                                       <div className="flex items-center gap-3 text-[12px] text-white/60">
-                                        <button
-                                          onClick={(e) => copyIp(it.ip, e)}
-                                          title={it.ip ? `Copiar IP ${it.ip}` : "Sem IP"}
-                                          className="hover:text-white/80 transition"
-                                        />
+
+
                                       </div>
                                     </div>
 
@@ -1766,7 +1982,7 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                                         <svg width="14" height="14" viewBox="0 0 20 20" className={`${open ? "rotate-180" : ""} transition`}>
                                           <path fill="currentColor" d="M5 8l5 5l5-5H5z" />
                                         </svg>
-                                        Detalhes
+                                        Detalhes da atividade
                                       </button>
                                       <AnimatePresence initial={false}>
                                         {open && (
@@ -1780,97 +1996,113 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
                                             className="overflow-hidden"
                                             onClick={(e) => e.stopPropagation()}
                                           >
-                                            <div className="mt-2 rounded-lg border border-white/10 bg:black/10 p-3 text-[12px] text-white/70 grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            <div className="mt-2 rounded-lg border border-white/10 bg-black/10 p-3 text-[12px] text-white/70 grid grid-cols-1 md:grid-cols-2 gap-2">
                                               {/* Identificação */}
                                               <div><span className="text-white/50">ID:</span> {it.id} <span className="text-white/40">({formatIdTag(it.id)})</span></div>
-                                              <div className="truncate"><span className="text-white/50">Request:</span> <Copyable text={it.request_id}>{maskId(it.request_id)}</Copyable></div>
-                                              <div className="truncate"><span className="text-white/50">Correlation:</span> <Copyable text={it.correlation_id}>{maskId(it.correlation_id)}</Copyable></div>
-                                              <div className="truncate"><span className="text-white/50">Session:</span> <Copyable text={it.session_id}>{maskId(it.session_id)}</Copyable></div>
-                                              <div className="truncate"><span className="text-white/50">Device:</span> <Copyable text={it.device_id}>{maskId(it.device_id)}</Copyable></div>
-
+                                              {it.request_id && (<div className="truncate"><span className="text-white/50">Request:</span> <Copyable text={it.request_id}>{maskId(it.request_id)}</Copyable></div>)}
+                                              {it.correlation_id && (<div className="truncate"><span className="text-white/50">Correlation:</span> <Copyable text={it.correlation_id}>{maskId(it.correlation_id)}</Copyable></div>)}
+                                              {it.session_id && (<div className="truncate"><span className="text-white/50">Session:</span> <Copyable text={it.session_id}>{maskId(it.session_id)}</Copyable></div>)}
+                                              {it.device_id && (<div className="truncate"><span className="text-white/50">Device:</span> <Copyable text={it.device_id}>{maskId(it.device_id)}</Copyable></div>)}
                                               {/* Segurança & risco */}
                                               <div className="flex flex-wrap items-center gap-2">
                                                 <span className="text-white/50">KYC:</span> <Badge>{it.kyc_level || "Não há informações"}</Badge>
                                                 <RiskPill score={it.risk_score} />
                                                 {Array.isArray(it.risk_flags) && it.risk_flags.length > 0 && (
                                                   <div className="flex flex-wrap gap-1">
-                                                    {it.risk_flags.slice(0, 4).map((f) => (<Badge key={f}>{f}</Badge>))}
+                                                    {it.risk_flags.slice(0, 4).map((f: string) => (<Badge key={f}>{f}</Badge>))}
                                                     {it.risk_flags.length > 4 && <Badge>+{it.risk_flags.length - 4}</Badge>}
                                                   </div>
                                                 )}
                                               </div>
 
                                               {/* Origem & ambiente */}
-                                              <div className="truncate">
-                                                <span className="text-white/50">Ambiente:</span>{" "}
-                                                <Badge className={
-                                                  it.environment === "prod" ? "border-red-400/40 text-red-300 bg-red-500/10"
-                                                    : it.environment === "sandbox" ? "border-yellow-400/40 text-yellow-200 bg-yellow-500/10"
-                                                      : "border-white/15 text-white/80"
-                                                }>
-                                                  {it.environment || "Não há informações"}
-                                                </Badge>
-                                              </div>
-                                              <div className="truncate"><span className="text-white/50">Origem:</span> {it.source || "Não há informações"}</div>
+                                              {it.environment && (
+                                                <div className="truncate">
+                                                  <span className="text-white/50">Ambiente:</span>{" "}
+                                                  <Badge className={
+                                                    it.environment === "prod" ? "border-red-400/40 text-red-300 bg-red-500/10"
+                                                      : it.environment === "sandbox" ? "border-yellow-400/40 text-yellow-200 bg-yellow-500/10"
+                                                        : "border-white/15 text-white/80"
+                                                  }>
+                                                    {it.environment}
+                                                  </Badge>
+                                                </div>
+                                              )}
+                                              {it.source && (<div className="truncate"><span className="text-white/50">Origem:</span> {it.source}</div>)}
 
                                               {/* Localização */}
-                                              <div className="truncate"><span className="text-white/50">IP:</span> <Copyable text={it.ip}>{it.ip || "Não há informações"}</Copyable></div>
-                                              <div className="truncate">
-                                                <span className="text-white/50">Geo:</span>{" "}
-                                                {[it.location?.city, it.location?.region, it.location?.country].filter(Boolean).join(" · ") || "Não há informações"} {it.location?.asn ? ` · ASN ${it.location.asn}` : ""}
-                                              </div>
+                                              {(it.ip) && (<div className="truncate"><span className="text-white/50">IP:</span> <Copyable text={it.ip}>{it.ip}</Copyable></div>)}
+                                              {(it.location?.city || it.location?.region || it.location?.country || it.location?.asn) && (
+                                                <div className="truncate">
+                                                  <span className="text-white/50">Geo:</span>{" "}
+                                                  {[it.location?.city, it.location?.region, it.location?.country].filter(Boolean).join(" · ")}
+                                                  {it.location?.asn ? ` · ASN ${it.location.asn}` : ""}
+                                                </div>
+                                              )}
 
                                               {/* Navegador & SO */}
-                                              <div className="truncate">
-                                                <span className="text-white/50">Navegador:</span>{" "}
-                                                {(it.user_agent ? parseUA(it.user_agent) : liveUA).browser || "Não há informações"}
-                                              </div>
-                                              <div className="truncate">
-                                                <span className="text-white/50">SO:</span>{" "}
-                                                {(it.user_agent ? parseUA(it.user_agent) : liveUA).os || "Não há informações"}
-                                              </div>
-                                              <div className="truncate"><span className="text-white/50">User-Agent:</span> <Copyable text={it.user_agent}>{it.user_agent || "Não há informações"}</Copyable></div>
+                                              {(it.user_agent || liveUA) && (
+                                                <div className="truncate">
+                                                  <span className="text-white/50">Navegador:</span>{" "}
+                                                  {(it.user_agent ? parseUA(it.user_agent) : liveUA).browser}
+                                                </div>
+                                              )}
+                                              {(it.user_agent || liveUA) && (
+                                                <div className="truncate">
+                                                  <span className="text-white/50">SO:</span>{" "}
+                                                  {(it.user_agent ? parseUA(it.user_agent) : liveUA).os}
+                                                </div>
+                                              )}
+                                              {it.user_agent && (
+                                                <div className="truncate"><span className="text-white/50">User-Agent:</span> <Copyable text={it.user_agent}>{it.user_agent}</Copyable></div>
+                                              )}
 
                                               {/* HTTP & performance */}
-                                              <div className="truncate">
-                                                <span className="text-white/50">HTTP:</span>{" "}
-                                                {[it.http?.method, it.http?.path].filter(Boolean).join(" ") || "Não há informações"}
-                                              </div>
-                                              <div className="truncate"><span className="text-white/50">Status:</span> {it.http?.status ?? "Não há informações"}</div>
-                                              <div className="truncate"><span className="text-white/50">Latency:</span> {typeof it.http?.latency_ms === "number" ? `${it.http?.latency_ms} ms` : "Não há informações"}</div>
-                                              <div className="truncate"><span className="text-white/50">Idempotency-Key:</span> <Copyable text={it.http?.idempotency_key}>{maskId(it.http?.idempotency_key)}</Copyable></div>
+                                              {(it.http?.method || it.http?.path) && (
+                                                <div className="truncate"><span className="text-white/50">HTTP:</span> {[it.http?.method, it.http?.path].filter(Boolean).join(" ")}</div>
+                                              )}
+                                              {(it.http?.status != null) && (<div className="truncate"><span className="text-white/50">Status:</span> {it.http.status}</div>)}
+                                              {(typeof it.http?.latency_ms === "number") && (<div className="truncate"><span className="text-white/50">Latency:</span> {it.http.latency_ms} ms</div>)}
+                                              {it.http?.idempotency_key && (
+                                                <div className="truncate"><span className="text-white/50">Idempotency-Key:</span> <Copyable text={it.http.idempotency_key}>{maskId(it.http.idempotency_key)}</Copyable></div>
+                                              )}
 
                                               {/* TLS */}
-                                              <div className="truncate">
-                                                <span className="text-white/50">TLS:</span>{" "}
-                                                {[it.tls?.version, it.tls?.cipher].filter(Boolean).join(" · ") || "Não há informações"}
-                                              </div>
+                                              {(it.tls?.version || it.tls?.cipher) && (
+                                                <div className="truncate"><span className="text-white/50">TLS:</span> {[it.tls?.version, it.tls?.cipher].filter(Boolean).join(" · ")}</div>
+                                              )}
 
                                               {/* Pagamento */}
-                                              <div className="truncate">
-                                                <span className="text-white/50">Cartão:</span>{" "}
-                                                {[it.payment?.card_brand, it.payment?.card_last4 ? `•••• ${it.payment?.card_last4}` : null].filter(Boolean).join(" · ") || "Não há informações"}
-                                              </div>
-                                              <div className="truncate"><span className="text-white/50">Parcelas:</span> {it.payment?.installment_count ?? "Não há informações"}</div>
-                                              <div className="truncate">
-                                                <span className="text-white/50">Gateway:</span>{" "}
-                                                {it.payment?.gateway_code || "Não há informações"}{it.payment?.chargeback ? " · chargeback" : ""}
-                                              </div>
+                                              {(it.payment?.card_brand || it.payment?.card_last4) && (
+                                                <div className="truncate">
+                                                  <span className="text-white/50">Cartão:</span>{" "}
+                                                  {[it.payment?.card_brand, it.payment?.card_last4 ? `•••• ${it.payment.card_last4}` : null].filter(Boolean).join(" · ")}
+                                                </div>
+                                              )}
+                                              {(it.payment?.installment_count != null) && (<div className="truncate"><span className="text-white/50">Parcelas:</span> {it.payment.installment_count}</div>)}
+                                              {(it.payment?.gateway_code || it.payment?.chargeback) && (
+                                                <div className="truncate">
+                                                  <span className="text-white/50">Gateway:</span>{" "}
+                                                  {it.payment?.gateway_code}{it.payment?.chargeback ? " · chargeback" : ""}
+                                                </div>
+                                              )}
 
                                               {/* Webhook */}
-                                              <div className="truncate">
-                                                <span className="text-white/50">Webhook:</span>{" "}
-                                                {it.webhook?.attempts != null ? `${it.webhook.attempts} tentativa(s)` : "Não há informações"}
-                                                {it.webhook?.last_status ? ` · ${it.webhook.last_status}` : ""}
-                                              </div>
+                                              {(it.webhook?.attempts != null || it.webhook?.last_status) && (
+                                                <div className="truncate">
+                                                  <span className="text-white/50">Webhook:</span>{" "}
+                                                  {it.webhook?.attempts != null ? `${it.webhook.attempts} tentativa(s)` : ""}
+                                                  {it.webhook?.last_status ? ` · ${it.webhook.last_status}` : ""}
+                                                </div>
+                                              )}
 
                                               {/* Identidades */}
-                                              <div className="truncate"><span className="text-white/50">Cliente:</span> <Copyable text={it.customer_id}>{maskId(it.customer_id)}</Copyable></div>
-                                              <div className="truncate"><span className="text-white/50">Estabelecimento:</span> <Copyable text={it.merchant_id}>{maskId(it.merchant_id)}</Copyable></div>
+                                              {it.customer_id && (<div className="truncate"><span className="text-white/50">Cliente:</span> <Copyable text={it.customer_id}>{maskId(it.customer_id)}</Copyable></div>)}
+                                              {it.merchant_id && (<div className="truncate"><span className="text-white/50">Estabelecimento:</span> <Copyable text={it.merchant_id}>{maskId(it.merchant_id)}</Copyable></div>)}
 
                                               {/* Datas */}
-                                              <div className="truncate"><span className="text-white/50">Criado:</span> {new Date(it.created_at).toLocaleString("pt-BR")}</div>
-                                              <div className="truncate"><span className="text-white/50">ISO:</span> {new Date(it.created_at).toISOString()}</div>
+                                              {it.created_at && (<div className="truncate"><span className="text-white/50">Criado:</span> {new Date(it.created_at).toLocaleString("pt-BR")}</div>)}
+                                              {it.created_at && (<div className="truncate"><span className="text-white/50">ISO:</span> {new Date(it.created_at).toISOString()}</div>)}
                                             </div>
                                           </motion.div>
                                         )}

@@ -1,7 +1,7 @@
 // app/api/recent-activities/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
-import { db } from "@/app/api/db";
+import { db } from "../db";
 import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
@@ -92,10 +92,8 @@ export async function GET(req: NextRequest) {
     const at = (url.searchParams.get("at") || "").trim();
     const idParam = url.searchParams.get("id");
 
-    // Se veio ?at= (token fixo), devolvemos apenas aquele registro (do usuário),
-    // ignorando paginação/filtros e já incluindo o campo at_token no payload.
+    // by ?at=
     if (at) {
-      // sanity check básico (UUID v4) — aceita minúsculas/maiúsculas
       const uuidRe = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
       if (!uuidRe.test(at)) {
         return NextResponse.json(
@@ -113,11 +111,30 @@ export async function GET(req: NextRequest) {
 
       const [rows] = await queryWithRetry<any[]>(
         `
-          /* recent-activities:by_at v1 */
-          SELECT id, at_token, type, status, description, amount_cents, currency, source, ip, user_agent, icon_url, created_at
-            FROM user_activity_log
-           WHERE user_id = ? AND at_token = ?
-           LIMIT 1
+/* recent-activities:by_at v2 (full) */
+SELECT
+  id, user_id,
+  at_token, at_type,
+  type, status, description,
+  amount_cents, currency, source,
+  ip, user_agent, icon_url, created_at,
+
+  request_id, correlation_id, session_id, device_id,
+  kyc_level, risk_score, risk_flags,
+  environment,
+  location_city, location_region, location_country, location_asn,
+
+  http_method, http_path, http_status, http_latency_ms, http_idempotency_key,
+  tls_version, tls_cipher,
+
+  payment_card_brand, payment_card_last4, payment_installment_count, payment_gateway_code, payment_chargeback,
+
+  webhook_attempts, webhook_last_status,
+
+  customer_id, merchant_id
+FROM user_activity_log
+WHERE user_id = ? AND at_token = ?
+LIMIT 1
         `,
         [userId, at]
       );
@@ -138,7 +155,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Paginação normal
+    // Paginação
     const page = Math.max(1, Number(url.searchParams.get("page") || DEFAULT_PAGE));
     const pageSizeRaw = Number(url.searchParams.get("pageSize") || DEFAULT_PAGE_SIZE);
     const pageSize = clamp(pageSizeRaw, MIN_PAGE_SIZE, MAX_PAGE_SIZE);
@@ -201,18 +218,38 @@ export async function GET(req: NextRequest) {
     const whereSql = "WHERE " + where.join(" AND ");
 
     const listSql = `
-      /* recent-activities:list v2 (with at_token) */
-      SELECT id, at_token, type, status, description, amount_cents, currency, source, ip, user_agent, icon_url, created_at
-        FROM user_activity_log
-        ${whereSql}
-       ORDER BY created_at DESC, id DESC
-       LIMIT ? OFFSET ?
+/* recent-activities:list v3 (full) */
+SELECT
+  id, user_id,
+  at_token, at_type,
+  type, status, description,
+  amount_cents, currency, source,
+  ip, user_agent, icon_url, created_at,
+
+  request_id, correlation_id, session_id, device_id,
+  kyc_level, risk_score, risk_flags,
+  environment,
+  location_city, location_region, location_country, location_asn,
+
+  http_method, http_path, http_status, http_latency_ms, http_idempotency_key,
+  tls_version, tls_cipher,
+
+  payment_card_brand, payment_card_last4, payment_installment_count, payment_gateway_code, payment_chargeback,
+
+  webhook_attempts, webhook_last_status,
+
+  customer_id, merchant_id
+FROM user_activity_log
+${whereSql}
+ORDER BY created_at DESC, id DESC
+LIMIT ? OFFSET ?
     `;
+
     const countSql = `
-      /* recent-activities:count v1 */
-      SELECT COUNT(*) AS total
-        FROM user_activity_log
-        ${whereSql}
+/* recent-activities:count v1 */
+SELECT COUNT(*) AS total
+FROM user_activity_log
+${whereSql}
     `;
 
     const [rows] = await queryWithRetry<any[]>(listSql, [...params, pageSize, offset]);

@@ -1,15 +1,16 @@
+// app/api/forgot-pass/route.ts  (ajuste o nome do arquivo se o seu for outro)
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "../db";
 import nodemailer, { Transporter } from "nodemailer";
 import { randomInt } from "crypto";
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 import { htmlMailTemplate } from "../html-mail/template";
+import { safeQuery } from "../../../lib/db-guard"; 
 
 dotenv.config();
 
 /* =========================================================
-   SMTP / E-MAIL (pool reaproveitável, igual padrão do register)
+   SMTP / E-MAIL (pool reaproveitável + retries robustos)
 ========================================================= */
 
 const SMTP_USER = process.env.SMTP_USER!;
@@ -17,6 +18,7 @@ const SMTP_PASS = process.env.SMTP_PASS!;
 const SMTP_HOST = process.env.SMTP_HOST || "smtp.hostinger.com";
 const SMTP_PORT = Number(process.env.SMTP_PORT) || 465;
 
+// sanity check
 if (!SMTP_USER || !SMTP_PASS) {
   throw new Error("❌ Variáveis SMTP_USER ou SMTP_PASS não definidas no .env");
 }
@@ -24,23 +26,29 @@ if (!SMTP_USER || !SMTP_PASS) {
 let transporter: Transporter | null = null;
 let transporterVerified = false;
 
+function makeTransport(): Transporter {
+  return nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465, // 465 = SMTPS
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    pool: true,
+    maxConnections: 4,
+    maxMessages: 200,
+    // timeouts para conexões problemáticas
+    connectionTimeout: 12_000,
+    greetingTimeout: 8_000,
+    socketTimeout: 20_000,
+    tls: {
+      // Em provedores com TLS intermediário às vezes o CA não bate certinho:
+      // se tiver DKIM/SPF/DMARC ok, pode manter false sem risco de MITM no servidor próprio.
+      rejectUnauthorized: false,
+    },
+  });
+}
+
 function getMailer(): Transporter {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_PORT === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-
-      pool: true,
-      maxConnections: 3,
-      maxMessages: 50,
-
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
-  }
+  if (!transporter) transporter = makeTransport();
   return transporter;
 }
 
@@ -52,12 +60,72 @@ async function ensureMailerReady() {
     transporterVerified = true;
     console.log("[FORGOT-PASS][MAILER] SMTP verificado.");
   } catch (err) {
-    console.warn(
-      "[FORGOT-PASS][MAILER] Falha em verify(). Alguns provedores bloqueiam VRFY:",
-      err
-    );
-    // não damos throw: vamos tentar mandar mesmo assim
+    // Alguns provedores bloqueiam VRFY — seguimos mesmo assim
+    console.warn("[FORGOT-PASS][MAILER] verify() falhou (ok prosseguir):", err);
   }
+}
+
+function isTransientMailErr(e: any): boolean {
+  const code = (e?.code || e?.errno || e?.responseCode || "").toString();
+  const msg = (e?.message || e?.response || "").toString().toLowerCase();
+  // erros típicos transitórios
+  return (
+    ["ETIMEDOUT", "ECONNECTION", "ESOCKET"].includes(code) ||
+    msg.includes("timed out") ||
+    msg.includes("connection closed") ||
+    msg.includes("read econnreset") ||
+    msg.includes("tls") ||
+    msg.includes("too many connections") ||
+    msg.includes("temporarily unavailable") ||
+    msg.includes("rate limit")
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function backoff(attempt: number, base = 300, cap = 4000) {
+  const expo = Math.min(cap, base * 2 ** attempt);
+  const jitter = Math.floor(Math.random() * base);
+  return expo + jitter;
+}
+
+/** Envia e-mail com retries, recriando o transporter se necessário */
+async function sendMailReliable(mail: Parameters<Transporter["sendMail"]>[0], retries = 4) {
+  let lastErr: any = null;
+
+  await ensureMailerReady();
+
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const info = await getMailer().sendMail(mail);
+      return info;
+    } catch (err: any) {
+      lastErr = err;
+
+      // Se for erro transitório, backoff e tenta de novo
+      if (i < retries && isTransientMailErr(err)) {
+        // recria o transporter (pool pode ter ficado zumbi)
+        try {
+          if (transporter) {
+            try { await transporter.close(); } catch {}
+          }
+        } catch {}
+        transporter = makeTransport();
+        transporterVerified = false;
+
+        const wait = backoff(i);
+        console.warn(`[MAIL][retry ${i + 1}/${retries}] aguardando ${wait}ms…`, err?.code || err?.message);
+        await sleep(wait);
+        continue;
+      }
+      // erro permanente (ex.: caixa inexistente) — dá erro direto
+      throw err;
+    }
+  }
+
+  throw lastErr ?? new Error("MAIL_UNKNOWN_ERROR");
 }
 
 /* =========================================================
@@ -126,30 +194,9 @@ function toMySQLDateTime(d: Date) {
 
 /* =========================================================
    ROTA / ESCOPO
-=========================================================
-
-Fluxo:
-
-FASE 1 (enviar código):
-  body: { email }
-  -> gera OTP, salva como 'pending' em forgot_pass_codes, envia e-mail
-
-FASE 2 (validar OTP):
-  body: { email, otp }
-  -> valida se OTP está ok e não expirou, muda status => 'validated'
-
-FASE 3 (trocar senha):
-  body: { email, otp, password }
-  -> checa status 'validated', policy de senha, troca password_hash no users,
-     marca forgot_pass_codes como 'blocked'
-
-Observações importantes:
-- Não vaza se a conta não existe (resposta genérica) OU pode vazar?
-  Você hoje já fala "Email não encontrado." em FASE 1. Vou manter isso.
-  Se quiser mais privacidade, a gente pode sempre responder sucesso mesmo sem conta.
-- Evita reusar código validado.
-
 ========================================================= */
+
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
@@ -168,15 +215,13 @@ export async function POST(req: NextRequest) {
     // ======================================================
     if (cleanEmail && !otp && !password) {
       // buscar usuário
-      const [userRows] = await db.query(
+      const [userRows] = await safeQuery<any>(
         "SELECT id, name, password_hash FROM users WHERE email=? LIMIT 1",
         [cleanEmail]
       );
-      const user = (userRows as any)[0];
+      const user = (userRows as any[])[0];
 
       if (!user) {
-        // você atualmente retorna erro se não achar o email.
-        // mantendo o mesmo comportamento.
         return NextResponse.json(
           { error: "Email não encontrado." },
           { status: 400 }
@@ -189,23 +234,21 @@ export async function POST(req: NextRequest) {
       const expireAtStr = toMySQLDateTime(expireAt);
 
       // pega último registro de forgot_pass_codes pra esse e-mail
-      const [lastCodes] = await db.query(
+      const [lastCodes] = await safeQuery<any>(
         "SELECT id, status FROM forgot_pass_codes WHERE email=? ORDER BY created_at DESC LIMIT 1",
         [cleanEmail]
       );
-      const last = (lastCodes as any)[0];
+      const last = (lastCodes as any[])[0];
 
       if (last && last.status === "pending") {
-        // atualiza o registro pendente existente em vez de criar outro
-        await db.query(
+        await safeQuery(
           `UPDATE forgot_pass_codes
            SET otp=?, expires_at=?, status='pending'
            WHERE id=?`,
           [code, expireAtStr, last.id]
         );
       } else {
-        // cria um novo registro
-        await db.query(
+        await safeQuery(
           `INSERT INTO forgot_pass_codes (
             email,
             otp,
@@ -219,8 +262,8 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // montar e-mail HTML bonitinho
-      const emailBody = htmlMailTemplate
+      // montar e-mail
+      const html = htmlMailTemplate
         .replace(/{{OTP}}/g, code)
         .replace(/{{NOME}}/g, user?.name || "Usuário")
         .replace(/{{IP}}/g, ip)
@@ -231,33 +274,31 @@ export async function POST(req: NextRequest) {
           "Use o código abaixo para continuar o processo de redefinição da sua senha Wyze Bank."
         );
 
-      // garantir conexão SMTP pool já validada
-      await ensureMailerReady();
+      const text =
+        `Redefinição de Senha (Wyze Bank)\n\n` +
+        `Seu código de verificação é: ${code}\n\n` +
+        `Solicitado em: ${new Date().toLocaleString()}\n` +
+        `IP: ${ip}\n` +
+        `Navegador: ${friendlyBrowser}\n` +
+        `Se não foi você, ignore este e-mail.\n`;
 
-      try {
-        const info = await getMailer().sendMail({
-          from: `"Wyze Bank" <${SMTP_USER}>`,
-          to: cleanEmail,
-          subject: "Código de verificação - Redefinição de senha",
-          html: emailBody,
-        });
+      // Envia com retries e recriação de pool se necessário
+      const info = await sendMailReliable({
+        from: `"Wyze Bank" <${SMTP_USER}>`,
+        to: cleanEmail,
+        subject: "Código de verificação - Redefinição de senha",
+        html,
+        text,
+        priority: "high",
+        messageId: `<forgot-${Date.now()}-${Math.random().toString(36).slice(2)}@wyzebank>`,
+      });
 
-        console.log("[FORGOT-PASS] OTP enviado", {
-          to: cleanEmail,
-          messageId: info.messageId,
-        });
-      } catch (mailErr: any) {
-        console.error("[FORGOT-PASS] Falha ao enviar OTP:", mailErr);
-
-        return NextResponse.json(
-          {
-            error:
-              "Não foi possível enviar o código de verificação agora. Tente novamente em instantes.",
-            code: "EMAIL_SEND_FAILED",
-          },
-          { status: 502 }
-        );
-      }
+      console.log("[FORGOT-PASS] OTP enviado", {
+        to: cleanEmail,
+        messageId: info?.messageId,
+        accepted: info?.accepted,
+        rejected: info?.rejected,
+      });
 
       return NextResponse.json({
         success: true,
@@ -269,12 +310,11 @@ export async function POST(req: NextRequest) {
     // FASE 2: usuário informou email + otp -> validar código
     // ======================================================
     if (cleanEmail && otp && !password) {
-      // pega o último OTP
-      const [rows] = await db.query(
+      const [rows] = await safeQuery<any>(
         "SELECT * FROM forgot_pass_codes WHERE email=? ORDER BY created_at DESC LIMIT 1",
         [cleanEmail]
       );
-      const last = (rows as any)[0];
+      const last = (rows as any[])[0];
 
       if (!last) {
         return NextResponse.json(
@@ -284,7 +324,6 @@ export async function POST(req: NextRequest) {
       }
 
       if (last.status !== "pending") {
-        // se já usou / bloqueou, não deixa validar de novo
         return NextResponse.json(
           { error: "Código já utilizado ou bloqueado." },
           { status: 400 }
@@ -305,8 +344,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // marca este OTP como validado
-      await db.query(
+      await safeQuery(
         "UPDATE forgot_pass_codes SET status='validated' WHERE id=?",
         [last.id]
       );
@@ -321,7 +359,6 @@ export async function POST(req: NextRequest) {
     // FASE 3: email + otp + password -> atualizar senha
     // ======================================================
     if (cleanEmail && otp && password) {
-      // aplica política de senha
       if (!validatePasswordPolicy(password)) {
         return NextResponse.json(
           {
@@ -332,14 +369,12 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // pega último OTP desse e-mail
-      const [rows] = await db.query(
+      const [rows] = await safeQuery<any>(
         "SELECT * FROM forgot_pass_codes WHERE email=? ORDER BY created_at DESC LIMIT 1",
         [cleanEmail]
       );
-      const last = (rows as any)[0];
+      const last = (rows as any[])[0];
 
-      // validar se o OTP tá correto e em status certo
       if (
         !last ||
         last.status !== "validated" ||
@@ -352,12 +387,11 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // buscar usuário
-      const [userRows] = await db.query(
+      const [userRows] = await safeQuery<any>(
         "SELECT id, password_hash FROM users WHERE email=? LIMIT 1",
         [cleanEmail]
       );
-      const user = (userRows as any)[0];
+      const user = (userRows as any[])[0];
 
       if (!user) {
         return NextResponse.json(
@@ -366,11 +400,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // evita redefinir pra mesma senha
-      const samePassword = await bcrypt.compare(
-        password,
-        user.password_hash
-      );
+      const samePassword = await bcrypt.compare(password, user.password_hash);
       if (samePassword) {
         return NextResponse.json(
           { error: "A nova senha não pode ser igual à senha atual." },
@@ -378,17 +408,14 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // gera hash novo
       const newHash = await bcrypt.hash(password, 10);
 
-      // atualiza senha do usuário
-      await db.query(
+      await safeQuery(
         "UPDATE users SET password_hash=? WHERE email=? LIMIT 1",
         [newHash, cleanEmail]
       );
 
-      // bloqueia esse código pra não ser reutilizado
-      await db.query(
+      await safeQuery(
         "UPDATE forgot_pass_codes SET status='blocked' WHERE id=?",
         [last.id]
       );
@@ -400,7 +427,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // payload não bate nenhum fluxo
     return NextResponse.json(
       { error: "Payload inválido." },
       { status: 400 }
@@ -409,7 +435,7 @@ export async function POST(req: NextRequest) {
     console.error("[FORGOT-PASS FATAL ERROR]", err);
 
     return NextResponse.json(
-      { error: err.message || "Erro interno." },
+      { error: err?.message || "Erro interno." },
       { status: 500 }
     );
   }
