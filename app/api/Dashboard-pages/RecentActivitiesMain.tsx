@@ -342,8 +342,8 @@ function parseFromUAString(uaRaw?: string | null): UAInfo {
   const ua = String(uaRaw || "");
   const u = ua.toLowerCase();
 
-  let browser = "Desconhecido";
-  let version = "";
+  let browser = "Não Informado";
+  let version = "Não Informado";
 
   const pick = (name: string, re: RegExp) => {
     const m = ua.match(re);
@@ -1702,6 +1702,68 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
     fetchByToken(at);
   }, [fetchByToken]);
 
+
+function TopPendingBannerSticky() {
+  return (
+    <div
+      className="sticky inset-x-0 z-[45]"
+      style={{ top: "var(--header-height, 56px)" }}
+      role="region"
+      aria-live="polite"
+      aria-label="Aviso de pendências de cadastro"
+    >
+      {/* Barra full-width (conteúdo do pane, sem encostar na sidebar) */}
+      <div
+        className={[
+          // amarelo mais elegante (gradiente suave)
+          "w-full bg-gradient-to-r",
+          // leve textura/transparência para fugir do chapado
+          "bg-[linear-gradient(180deg,rgba(255,166,0,0.12)_0%,rgba(255,255,255,0)_50%)]",
+          "backdrop-blur-[2px] text-white",
+          // hairlines sutis
+          "shadow-[inset_0_-1px_0_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.03)]",
+        ].join(" ")}
+      >
+        <div className="px-4 lg:px-6 py-2.5">
+          {/* Centro real, com espaçamento respirável */}
+          <div className="mx-auto flex max-w-none flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4 text-center">
+            {/* pill translúcido: reduz “peso” do amarelo e destaca o conteúdo */}
+            <div className="inline-flex flex-wrap items-center justify-center gap-2 rounded-full bg-black/10 px-3.5 py-2">
+              <span className="sr-only">Status:</span>
+              <svg
+                width="14" height="14" viewBox="0 0 20 20" aria-hidden
+                className="opacity-95"
+              >
+                <path fill="#FDC700" d="M10 2a8 8 0 108 8a8 8 0 00-8-8Zm1 13H9v-2h2Zm0-4H9V5h2Z" />
+              </svg>
+
+              <p className="text-[14px] sm:text-sm font-medium leading-snug">
+                Faltam alguns passos para concluir seu cadastro.
+              </p>
+
+              <a
+                href="/verificacao/pendencias"
+                className={[
+                  "inline-flex items-center justify-center gap-1 rounded-md",
+                  "px-4 py-1.5 text-[10px] sm:text-sm font-semibold transition",
+                  // botão fantasma branco sofisticado
+                  "text-white border border-white/10",
+                  "bg-white/0 hover:bg-white/5",
+                  // micro-interações
+                  "focus:outline-none focus:ring-2 focus:ring-yellow-300/60 focus:ring-offset-0",
+                ].join(" ")}
+              >
+                Verificar pendências
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+  
   /* ---------------- UI ---------------- */
   return (
     <SidebarProvider
@@ -1716,6 +1778,9 @@ export default function RecentActivitiesMain({ userName, userEmail }: Props) {
 
       <SidebarInset>
         <SiteHeader />
+
+{/* Faixa sticky abaixo do header, fora do max-w e sem invadir a sidebar */}
+<TopPendingBannerSticky />
 
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
